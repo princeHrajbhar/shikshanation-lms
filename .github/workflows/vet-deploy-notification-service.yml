@@ -1,0 +1,219 @@
+name: Deploy Notification to VET EKS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "notification_service/**"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # `environment: vet-education` scopes the env-specific runtime secrets
+    # used by the kubectl-set-env block (DB creds, AWS mail/SQS keys,
+    # WhatsApp tokens). SENTRY_AUTH_TOKEN / SENTRY_DSN fall through to
+    # repo-level secrets, same as maven-publish-notification-service.yml.
+    environment: vet-education
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Authenticate GitHub Package Registry
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+        run: |
+          echo "${JAVA_TOKEN}" | docker login ghcr.io -u ${ACCESS_GITHUB_USERNAME} --password-stdin
+          mkdir -p ~/.m2
+          echo "<settings><servers><server><id>github</id><username>${ACCESS_GITHUB_USERNAME}</username><password>${JAVA_TOKEN}</password></server></servers></settings>" > ~/.m2/settings.xml
+
+      # The runner-side "Remove sentry plugin from pom" step was deleted now
+      # that we have a working repo-level SENTRY_AUTH_TOKEN. The vet Docker
+      # image still strips the plugin internally (vet-eks-resources/dockerfiles/
+      # Dockerfile.notification-service) for safety until we're ready to also
+      # build the source bundle from inside the container — runner-side
+      # upload is enough to get sentry-events / source-mapped traces working.
+      - name: Build Project
+        working-directory: ./notification_service
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: mvn -s settings.xml clean install -DskipTests -Dsentry.authToken=$SENTRY_AUTH_TOKEN
+
+      - name: Configure AWS credentials for ECR Public
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "us-east-1"
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        working-directory: ./notification_service
+        env:
+          ECR_REGISTRY: public.ecr.aws/h3e7x6t4
+          IMAGE_TAG: ${{ github.sha }}
+          REPOSITORY: notification-service/notification-service-repo
+          GITHUB_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          AWS_MAIL_USERNAME: ${{ secrets.AWS_MAIL_USERNAME }}
+          AWS_MAIL_PASSWORD: ${{ secrets.AWS_MAIL_PASSWORD }}
+          SES_SENDER_EMAIL: ${{ secrets.SES_SENDER_EMAIL }}
+          SES_CONFIGURATION_SET: ${{ secrets.SES_CONFIGURATION_SET }}
+          SES_EVENTS_SQS_URL: ${{ secrets.SES_EVENTS_SQS_URL }}
+          SQS_AWS_ACCESS_KEY: ${{ secrets.SQS_AWS_ACCESS_KEY }}
+          SQS_AWS_SECRET_KEY: ${{ secrets.SQS_AWS_SECRET_KEY }}
+          SQS_AWS_REGION: ${{ secrets.SQS_AWS_REGION }}
+          SQS_ENDPOINT: ${{ secrets.SQS_ENDPOINT }}
+          SQS_REGION: ${{ secrets.SQS_REGION }}
+          AWS_SQS_ENABLED: ${{ secrets.AWS_SQS_ENABLED }}
+          # Inbound email receiving (opt-in; flag defaults false in app properties so unset secrets are safe)
+          INBOUND_EMAIL_ENABLED: ${{ secrets.INBOUND_EMAIL_ENABLED }}
+          INBOUND_EMAIL_AWS_REGION: ${{ secrets.INBOUND_EMAIL_AWS_REGION }}
+          INBOUND_EMAIL_AWS_ACCESS_KEY: ${{ secrets.INBOUND_EMAIL_AWS_ACCESS_KEY }}
+          INBOUND_EMAIL_AWS_SECRET_KEY: ${{ secrets.INBOUND_EMAIL_AWS_SECRET_KEY }}
+          INBOUND_EMAIL_SQS_QUEUE_NAME: ${{ secrets.INBOUND_EMAIL_SQS_QUEUE_NAME }}
+          INBOUND_EMAIL_S3_BUCKET: ${{ secrets.INBOUND_EMAIL_S3_BUCKET }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG -f ${GITHUB_WORKSPACE}/vet-eks-resources/dockerfiles/Dockerfile.notification-service . --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} --build-arg ACCESS_GITHUB_USERNAME=${ACCESS_GITHUB_USERNAME} --build-arg JAVA_TOKEN=${JAVA_TOKEN} --build-arg SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN}
+          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$REPOSITORY:latest
+          echo "Deployable image = $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG"
+
+      - name: Configure AWS credentials for EKS
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.VET_EKS_REGION }}
+
+      - name: Connect to EKS cluster
+        run: |
+          aws eks update-kubeconfig --name ${{ secrets.VET_EKS_CLUSTER_NAME }} --region ${{ secrets.VET_EKS_REGION }}
+
+      - name: Deploy to Kubernetes
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          APP_USERNAME: ${{ secrets.APP_USERNAME }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          CLOUD_FRONT_URL: ${{ secrets.CLOUD_FRONT_URL }}
+          NOTIFICATION_SERVICE_DB_URL: ${{ secrets.NOTIFICATION_SERVICE_DB_URL }}
+          NOTIFICATION_SERVICE_READ_DB_URL: ${{ secrets.NOTIFICATION_SERVICE_READ_DB_URL }}
+          MAIL_HOST: ${{ secrets.MAIL_HOST }}
+          MAIL_PORT: ${{ secrets.MAIL_PORT }}
+          AWS_MAIL_USERNAME: ${{ secrets.AWS_MAIL_USERNAME }}
+          AWS_MAIL_PASSWORD: ${{ secrets.AWS_MAIL_PASSWORD }}
+          SES_SENDER_SMTP_USERNAME: ${{ secrets.AWS_MAIL_USERNAME }}
+          SES_SENDER_SMTP_PASSWORD: ${{ secrets.AWS_MAIL_PASSWORD }}
+          SES_SENDER_EMAIL: ${{ secrets.SES_SENDER_EMAIL }}
+          WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          WHATSAPP_ACCESS_TOKEN_VIDYAYATAN: ${{ secrets.WHATSAPP_ACCESS_TOKEN_VIDYAYATAN }}
+          WHATSAPP_PHONE_NUMBER_ID_VIDYAYATAN: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID_VIDYAYATAN }}
+          SES_CONFIGURATION_SET: ${{ secrets.SES_CONFIGURATION_SET }}
+          SES_EVENTS_SQS_URL: ${{ secrets.SES_EVENTS_SQS_URL }}
+          SQS_AWS_ACCESS_KEY: ${{ secrets.SQS_AWS_ACCESS_KEY }}
+          SQS_AWS_SECRET_KEY: ${{ secrets.SQS_AWS_SECRET_KEY }}
+          SQS_AWS_REGION: ${{ secrets.SQS_AWS_REGION }}
+          SQS_ENDPOINT: ${{ secrets.SQS_ENDPOINT }}
+          SQS_REGION: ${{ secrets.SQS_REGION }}
+          AWS_SQS_ENABLED: ${{ secrets.AWS_SQS_ENABLED }}
+          INBOUND_EMAIL_ENABLED: ${{ secrets.INBOUND_EMAIL_ENABLED }}
+          INBOUND_EMAIL_AWS_REGION: ${{ secrets.INBOUND_EMAIL_AWS_REGION }}
+          INBOUND_EMAIL_AWS_ACCESS_KEY: ${{ secrets.INBOUND_EMAIL_AWS_ACCESS_KEY }}
+          INBOUND_EMAIL_AWS_SECRET_KEY: ${{ secrets.INBOUND_EMAIL_AWS_SECRET_KEY }}
+          INBOUND_EMAIL_SQS_QUEUE_NAME: ${{ secrets.INBOUND_EMAIL_SQS_QUEUE_NAME }}
+          INBOUND_EMAIL_S3_BUCKET: ${{ secrets.INBOUND_EMAIL_S3_BUCKET }}
+          EMAIL_UNSUBSCRIBE_SECRET: ${{ secrets.EMAIL_UNSUBSCRIBE_SECRET }}
+          EMAIL_SENDER_POSTAL_ADDRESS: ${{ secrets.EMAIL_SENDER_POSTAL_ADDRESS }}
+          EMAIL_UNSUBSCRIBE_BASE_URL: ${{ secrets.EMAIL_UNSUBSCRIBE_BASE_URL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          kubectl set env deployment/notification-service \
+            environment=stage \
+            "DB_PASSWORD=${DB_PASSWORD//[$'\r\n']/}" \
+            "DB_USERNAME=${DB_USERNAME//[$'\r\n']/}" \
+            "APP_USERNAME=${APP_USERNAME//[$'\r\n']/}" \
+            "APP_PASSWORD=${APP_PASSWORD//[$'\r\n']/}" \
+            "CLOUD_FRONT_URL=${CLOUD_FRONT_URL//[$'\r\n']/}" \
+            "NOTIFICATION_SERVICE_DB_URL=${NOTIFICATION_SERVICE_DB_URL//[$'\r\n']/}" \
+            "NOTIFICATION_SERVICE_READ_DB_URL=${NOTIFICATION_SERVICE_READ_DB_URL//[$'\r\n']/}" \
+            "MAIL_HOST=${MAIL_HOST//[$'\r\n']/}" \
+            "MAIL_PORT=${MAIL_PORT//[$'\r\n']/}" \
+            "AWS_MAIL_USERNAME=${AWS_MAIL_USERNAME//[$'\r\n']/}" \
+            "AWS_MAIL_PASSWORD=${AWS_MAIL_PASSWORD//[$'\r\n']/}" \
+            "SES_SENDER_SMTP_USERNAME=${SES_SENDER_SMTP_USERNAME//[$'\r\n']/}" \
+            "SES_SENDER_SMTP_PASSWORD=${SES_SENDER_SMTP_PASSWORD//[$'\r\n']/}" \
+            "SES_SENDER_EMAIL=${SES_SENDER_EMAIL//[$'\r\n']/}" \
+            "WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN//[$'\r\n']/}" \
+            "WHATSAPP_ACCESS_TOKEN_VIDYAYATAN=${WHATSAPP_ACCESS_TOKEN_VIDYAYATAN//[$'\r\n']/}" \
+            "WHATSAPP_PHONE_NUMBER_ID_VIDYAYATAN=${WHATSAPP_PHONE_NUMBER_ID_VIDYAYATAN//[$'\r\n']/}" \
+            "SES_CONFIGURATION_SET=${SES_CONFIGURATION_SET//[$'\r\n']/}" \
+            "SES_EVENTS_SQS_URL=${SES_EVENTS_SQS_URL//[$'\r\n']/}" \
+            "SQS_AWS_ACCESS_KEY=${SQS_AWS_ACCESS_KEY//[$'\r\n']/}" \
+            "SQS_AWS_SECRET_KEY=${SQS_AWS_SECRET_KEY//[$'\r\n']/}" \
+            "SQS_AWS_REGION=${SQS_AWS_REGION//[$'\r\n']/}" \
+            "SQS_ENDPOINT=${SQS_ENDPOINT//[$'\r\n']/}" \
+            "SQS_REGION=${SQS_REGION//[$'\r\n']/}" \
+            "AWS_SQS_ENABLED=${AWS_SQS_ENABLED//[$'\r\n']/}" \
+            "INBOUND_EMAIL_ENABLED=${INBOUND_EMAIL_ENABLED//[$'\r\n']/}" \
+            "INBOUND_EMAIL_AWS_REGION=${INBOUND_EMAIL_AWS_REGION//[$'\r\n']/}" \
+            "INBOUND_EMAIL_AWS_ACCESS_KEY=${INBOUND_EMAIL_AWS_ACCESS_KEY//[$'\r\n']/}" \
+            "INBOUND_EMAIL_AWS_SECRET_KEY=${INBOUND_EMAIL_AWS_SECRET_KEY//[$'\r\n']/}" \
+            "INBOUND_EMAIL_SQS_QUEUE_NAME=${INBOUND_EMAIL_SQS_QUEUE_NAME//[$'\r\n']/}" \
+            "INBOUND_EMAIL_S3_BUCKET=${INBOUND_EMAIL_S3_BUCKET//[$'\r\n']/}" \
+            "EMAIL_UNSUBSCRIBE_SECRET=${EMAIL_UNSUBSCRIBE_SECRET//[$'\r\n']/}" \
+            "EMAIL_SENDER_POSTAL_ADDRESS=${EMAIL_SENDER_POSTAL_ADDRESS//[$'\r\n']/}" \
+            "EMAIL_UNSUBSCRIBE_BASE_URL=${EMAIL_UNSUBSCRIBE_BASE_URL//[$'\r\n']/}" \
+            "SENTRY_DSN=${SENTRY_DSN//[$'\r\n']/}" \
+            "SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN//[$'\r\n']/}"
+
+      # Pins the immutable SHA tag and FAILS the workflow if the pods do not come
+      # up. Replaces a blind `kubectl rollout restart`, which only forced a re-pull
+      # of the mutable `latest` and reported success even when every pod
+      # crash-looped. See vet-deploy-admin-core-service.yml for the full rationale.
+      - name: Deploy image and wait for it to become healthy
+        env:
+          ECR_REGISTRY: public.ecr.aws/h3e7x6t4
+          REPOSITORY: notification-service/notification-service-repo
+          IMAGE_TAG: ${{ github.sha }}
+          DEPLOYMENT_NAME: notification-service
+          NAMESPACE: default
+        run: |
+          kubectl set image deployment/$DEPLOYMENT_NAME \
+            $DEPLOYMENT_NAME=$ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            --namespace $NAMESPACE
+          kubectl rollout status deployment/$DEPLOYMENT_NAME \
+            --namespace $NAMESPACE --timeout=10m
+
+      - name: Roll back if the new image failed to come up
+        if: failure()
+        env:
+          DEPLOYMENT_NAME: notification-service
+          NAMESPACE: default
+        run: |
+          echo "::error::Rollout failed — reverting to the previous working image."
+          kubectl rollout undo deployment/$DEPLOYMENT_NAME --namespace $NAMESPACE || true
+          kubectl rollout status deployment/$DEPLOYMENT_NAME \
+            --namespace $NAMESPACE --timeout=10m || true
+          kubectl get pods -l app=$DEPLOYMENT_NAME --namespace $NAMESPACE || true

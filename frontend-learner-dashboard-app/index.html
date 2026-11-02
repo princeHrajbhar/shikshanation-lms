@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#1f2937" />
+    <meta name="description" content="Learning Platform" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.webp" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- iOS "Add to Home Screen" label. Rewritten per-institute by the branding
+         script below (and blanked on unresolved white-label hosts) — the value
+         here is only the Vacademy-host default. -->
+    <meta name="apple-mobile-web-app-title" content="Vacademy" />
+    <script>
+      (function () {
+        try {
+          var branding = localStorage.getItem("TabBranding");
+          var setAppleTitle = function (value) {
+            var m = document.querySelector(
+              'meta[name="apple-mobile-web-app-title"]'
+            );
+            if (m) m.setAttribute("content", value);
+          };
+          if (!branding) {
+            // Cold cache (no institute branding yet): the default /favicon.ico
+            // and /icons/icon-192.webp are the Vacademy mark. Keep them only on
+            // Vacademy-owned hosts; on a white-labelled domain blank them so the
+            // Vacademy "V" never flashes in the tab/PWA before React resolves the
+            // institute icon.
+            var coldHost = location.hostname;
+            var isVacademyHost =
+              /(^|\.)vacademy\.io$/.test(coldHost) ||
+              coldHost === "localhost" ||
+              coldHost === "127.0.0.1";
+            if (!isVacademyHost) {
+              // Same reasoning as the icon: on someone else's domain, no name
+              // beats the Vacademy name in iOS's "Add to Home Screen" sheet.
+              setAppleTitle("");
+              var blankIcon =
+                "data:image/svg+xml," +
+                encodeURIComponent(
+                  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"></svg>'
+                );
+              document
+                .querySelectorAll('link[rel*="icon"]')
+                .forEach(function (lnk) {
+                  lnk.setAttribute("href", blankIcon);
+                });
+              if (!document.querySelector('link[rel="icon"]')) {
+                var coldIconLink = document.createElement("link");
+                coldIconLink.setAttribute("rel", "icon");
+                coldIconLink.setAttribute("href", blankIcon);
+                document.head.appendChild(coldIconLink);
+              }
+            }
+          }
+          if (branding) {
+            var parsed = JSON.parse(branding);
+            if (parsed.tabText) {
+              document.title = parsed.tabText;
+              setAppleTitle(parsed.tabText);
+            }
+            if (parsed.tabIconUrl) {
+              var href = parsed.tabIconUrl;
+              var links = document.querySelectorAll('link[rel*="icon"]');
+              if (links && links.length) {
+                links.forEach(function (lnk) {
+                  lnk.setAttribute("href", href);
+                });
+              } else {
+                var link = document.createElement("link");
+                link.setAttribute("rel", "icon");
+                link.setAttribute("href", href);
+                document.head.appendChild(link);
+              }
+              var sicon = document.querySelector('link[rel="shortcut icon"]');
+              if (!sicon) {
+                sicon = document.createElement("link");
+                sicon.setAttribute("rel", "shortcut icon");
+                document.head.appendChild(sicon);
+              }
+              sicon.setAttribute("href", href);
+            }
+            if (parsed.fontFamily) {
+              /* Mirrors resolveFontStack() in src/utils/branding.ts — that is the
+                 source of truth; this copy exists only because this script runs
+                 before the bundle (first paint, anti-FOUC) and cannot import.
+                 Keep the two in sync. 'Noto Naskh Arabic' must stay ahead of the
+                 system fonts or branded institutes lose Arabic glyphs; it is
+                 unicode-range-scoped in index.css so Latin never reaches it. */
+              var ARABIC_FALLBACK = "'Noto Naskh Arabic'";
+              var SYSTEM_TAIL =
+                'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+              var mapFamily = function (f) {
+                var key = String(f).toUpperCase();
+                if (key === "INTER")
+                  return "Inter, " + ARABIC_FALLBACK + ", " + SYSTEM_TAIL;
+                if (key === "CAIRO")
+                  return "Cairo, " + ARABIC_FALLBACK + ", " + SYSTEM_TAIL;
+                if (key === "PLAYPEN SANS")
+                  return (
+                    "Playpen Sans, " +
+                    ARABIC_FALLBACK +
+                    ', cursive, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"'
+                  );
+                if (key === "WORK SANS")
+                  return "Work Sans, " + ARABIC_FALLBACK + ", " + SYSTEM_TAIL;
+                if (key === "LEXEND")
+                  return "Lexend, " + ARABIC_FALLBACK + ", " + SYSTEM_TAIL;
+                /* Literal CSS stack: insert the Arabic face after the first
+                   family, before any generic (a generic matches everything). */
+                if (/noto\s+naskh\s+arabic/i.test(f)) return f;
+                var parts = String(f).split(",");
+                return [parts[0].trim(), ARABIC_FALLBACK]
+                  .concat(
+                    parts.slice(1).map(function (p) {
+                      return p.trim();
+                    })
+                  )
+                  .join(", ");
+              };
+              var resolved = mapFamily(parsed.fontFamily);
+              document.documentElement.style.setProperty(
+                "--app-font-family",
+                resolved
+              );
+              document.body.style.fontFamily = resolved;
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Default UI font (premium grotesk). Loaded first so it is on the critical path. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <!-- White-label font options (selected per-tenant via TabBranding); Open Sans kept as a fallback option. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&family=Kalam:wght@400;700&family=Cairo:wght@300;400;500;600;700&family=Playpen+Sans:wght@300;400;500;600;700&family=Work+Sans:wght@300;400;500;600;700&family=Lexend:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Self-heal for stale-cache / purged-chunk failures.
+         A cached index.html can point at a chunk hash the CDN has since
+         purged; the request then falls back to index.html (text/html), the
+         module fails MIME checks, and the app never boots. When that happens
+         we clear all caches + service workers and do ONE hard reload, guarded
+         by sessionStorage so it can never loop.
+
+         The reload alone is not enough: the fallback HTML is served under a
+         .js/.css URL, so it inherits the long-lived caching rule in
+         public/_headers and location.reload() re-reads the poisoned entry
+         instead of refetching. So before reloading we re-request every failed
+         asset with {cache:"reload"}, which bypasses the HTTP cache AND
+         overwrites the bad entry with the real file. -->
+    <script>
+      (function () {
+        var KEY = "__chunkRecoveryAttempted__";
+        var badUrls = [];
+        function isAppAsset(url) {
+          return (
+            !!url &&
+            (/\/assets\/.*\.(js|css)$/.test(url) || /\/src\/main\.tsx$/.test(url))
+          );
+        }
+        function purgeBadUrls() {
+          if (typeof fetch !== "function" || !badUrls.length) {
+            return Promise.resolve();
+          }
+          return Promise.all(
+            badUrls.map(function (u) {
+              return fetch(u, {
+                cache: "reload",
+                credentials: "same-origin",
+              }).catch(function () {});
+            })
+          );
+        }
+        function recover() {
+          try {
+            if (sessionStorage.getItem(KEY)) return; // already tried this session
+            sessionStorage.setItem(KEY, "1");
+          } catch (e) {}
+          // The whole head fails within the same tick — wait for the rest of
+          // the errors to land so one pass re-fetches every poisoned URL.
+          setTimeout(runRecovery, 150);
+        }
+        function runRecovery() {
+          var reload = function () {
+            location.reload();
+          };
+          var tasks = [purgeBadUrls()];
+          try {
+            if ("serviceWorker" in navigator) {
+              tasks.push(
+                navigator.serviceWorker
+                  .getRegistrations()
+                  .then(function (regs) {
+                    return Promise.all(
+                      regs.map(function (r) {
+                        return r.unregister();
+                      })
+                    );
+                  })
+                  .catch(function () {})
+              );
+            }
+            if (window.caches && caches.keys) {
+              tasks.push(
+                caches
+                  .keys()
+                  .then(function (keys) {
+                    return Promise.all(
+                      keys.map(function (k) {
+                        return caches.delete(k);
+                      })
+                    );
+                  })
+                  .catch(function () {})
+              );
+            }
+          } catch (e) {}
+          Promise.all(tasks).then(reload, reload);
+          // Safety: reload even if cleanup hangs. Generous, because the purge
+          // above is downloading the real chunks — work the reload would have
+          // had to do anyway, so finishing it is worth the wait.
+          setTimeout(reload, 10000);
+        }
+        // Resource load errors don't bubble, so listen in the capture phase.
+        window.addEventListener(
+          "error",
+          function (e) {
+            var t = e && e.target;
+            if (t && (t.tagName === "SCRIPT" || t.tagName === "LINK")) {
+              var url = t.src || t.href;
+              if (isAppAsset(url)) {
+                if (badUrls.indexOf(url) === -1) badUrls.push(url);
+                recover();
+              }
+            }
+          },
+          true
+        );
+        // Clear the guard once the app has actually rendered. (The boot splash
+        // lives OUTSIDE #root, so root children = real app render.)
+        window.addEventListener("load", function () {
+          setTimeout(function () {
+            var root = document.getElementById("root");
+            if (root && root.childElementCount > 0) {
+              try {
+                sessionStorage.removeItem(KEY);
+              } catch (e) {}
+            }
+          }, 4000);
+        });
+      })();
+    </script>
+
+    <!-- jQuery must load before any module code: MathQuill (used inside the
+         lazy quill-editor chunk) reads window.jQuery at module-eval time, and
+         that chunk is a static dep of the entry, so it evaluates BEFORE the
+         entry body. A classic <script> tag self-installs window.jQuery via
+         jQuery's UMD wrapper, beating the ES-module graph. -->
+    <script src="/vendor/jquery.min.js"></script>
+
+    <!-- Eway eCrypt Library for Client-Side Encryption -->
+    <!-- Official Documentation: https://eway.io/api-v3/#client-side-encryption -->
+    <script src="https://secure.ewaypayments.com/scripts/eCrypt.min.js"></script>
+
+    <title>Course Catalogue</title>
+
+    <!-- Boot splash: shown instantly on every hard load (cold start, login
+         redirects, switching in/out of student view) until the app mounts and
+         removes it (see __root.tsx). It lives OUTSIDE #root — main.tsx refuses
+         to mount when #root already has content. Branded from the
+         localStorage "InstituteBranding" cache (logo + theme colour) when
+         available; falls back to the neutral bar on a first-ever visit.
+         Colors inline on purpose — the app CSS has not loaded yet. -->
+    <style>
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: #fff;
+        transition: opacity 0.25s ease;
+      }
+      .boot-splash-logo {
+        height: 64px;
+        max-width: 200px;
+        object-fit: contain;
+        display: none;
+        animation: boot-pulse 1.6s ease-in-out infinite;
+      }
+      .boot-splash-track {
+        width: 160px;
+        height: 4px;
+        border-radius: 9999px;
+        background: #f1f5f9;
+        overflow: hidden;
+      }
+      .boot-splash-bar {
+        height: 100%;
+        border-radius: 9999px;
+        background: hsl(24 85% 54%);
+        animation: boot-progress 2s ease-in-out infinite;
+      }
+      @keyframes boot-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.06);
+          opacity: 0.85;
+        }
+      }
+      @keyframes boot-progress {
+        0% {
+          width: 0%;
+          margin-left: 0%;
+        }
+        50% {
+          width: 70%;
+          margin-left: 15%;
+        }
+        100% {
+          width: 0%;
+          margin-left: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="boot-splash">
+      <img id="boot-splash-logo" class="boot-splash-logo" alt="" />
+      <div class="boot-splash-track"><div id="boot-splash-bar" class="boot-splash-bar"></div></div>
+    </div>
+    <script>
+      // Brand the splash from the cached institute branding (same cache the
+      // in-app DashboardLoader uses). Safe no-op on a first-ever visit.
+      (function () {
+        try {
+          var b = JSON.parse(localStorage.getItem("InstituteBranding") || "null");
+          if (b && b.instituteLogoUrl) {
+            var img = document.getElementById("boot-splash-logo");
+            img.onload = function () {
+              img.style.display = "block";
+            };
+            img.src = b.instituteLogoUrl;
+          }
+          // instituteThemeHex is the theme code already resolved to a real
+          // colour by services/domain-routing.ts (which can read theme.json;
+          // this inline script cannot). Only ever assign something that actually
+          // looks like a colour: the old code assigned instituteThemeCode
+          // directly, so codes like "navy"/"teal"/"purple" painted an unrelated
+          // CSS named colour and "primary"/"holistic" silently no-opped.
+          var splashColor = (b && b.instituteThemeHex) || null;
+          if (!splashColor && b && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(b.instituteThemeCode || "")) {
+            splashColor = b.instituteThemeCode; // custom-hex brand, cached before instituteThemeHex existed
+          }
+          if (splashColor) {
+            document.getElementById("boot-splash-bar").style.background = splashColor;
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <div id="portal-root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

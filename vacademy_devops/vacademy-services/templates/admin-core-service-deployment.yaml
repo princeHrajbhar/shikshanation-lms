@@ -1,0 +1,100 @@
+{{- /*
+  JVM heap is pinned via JAVA_TOOL_OPTIONS below because the Hetzner
+  Ubuntu 26.04 / Linux 7.0.0 kernel breaks the JVM's cgroup-v2
+  container-support detection: every Java pod read the node's full
+  memory (~11.4 GiB) as its heap budget on a 1-2 GiB pod limit, which
+  caused OOMKill cascades (migration day + media-service OOMKill).
+  Explicit -Xms/-Xmx via JAVA_TOOL_OPTIONS sidesteps the broken
+  auto-detection. See memory/jvm-cgroup-detection-broken-hetzner.md.
+*/ -}}
+{{- if .Values.services.admin_core_service.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-core-service
+  namespace: default
+  labels:
+    app: admin-core-service
+spec:
+  replicas: {{ .Values.services.admin_core_service.replicas | default .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.rollingUpdate.maxSurge }}
+      maxUnavailable: {{ .Values.rollingUpdate.maxUnavailable }}
+  selector:
+    matchLabels:
+      app: admin-core-service
+  template:
+    metadata:
+      labels:
+        app: admin-core-service
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: admin-core-service
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: admin-core-service
+          image: "{{ .Values.services.admin_core_service.image.repository }}:{{ .Values.services.admin_core_service.image.tag }}"
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: myconfigmapv1.0
+            - secretRef:
+                name: vacademy-secrets
+          env:
+            # Pin heap explicitly; cgroup-v2 auto-detection is broken on this kernel.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xms512m -Xmx2560m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1536Mi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          # startupProbe gates startup: it polls until the app first answers OK,
+          # then liveness/readiness take over. With initialDelaySeconds=30 we
+          # detect a ready pod ~150s earlier per pod vs the old 180-300s wait,
+          # while failureThreshold=60 × periodSeconds=30 = 30 min grace covers
+          # even very slow Spring Boot starts. liveness/readiness initialDelay=0
+          # is safe because k8s won't run them until startupProbe succeeds.
+          startupProbe:
+            httpGet:
+              path: /admin-core-service/actuator/health
+              port: {{ .Values.services.admin_core_service.port }}
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 60
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /admin-core-service/actuator/health
+              port: {{ .Values.services.admin_core_service.port }}
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 5
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: /admin-core-service/actuator/health
+              port: {{ .Values.services.admin_core_service.port }}
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 5
+            successThreshold: 1
+          ports:
+            - containerPort: {{ .Values.services.admin_core_service.port }}
+{{- end }}

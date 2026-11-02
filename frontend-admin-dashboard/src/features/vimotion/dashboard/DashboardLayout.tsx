@@ -1,0 +1,181 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import { getInstituteId } from '@/constants/helper';
+import { VideoConsoleWorkspace } from '@/routes/video-api-studio/-components/VideoConsoleWorkspace';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sidebar, SidebarContent } from './Sidebar';
+import { Topbar } from './Topbar';
+import { BottomTabBar } from './BottomTabBar';
+import { RecentTab } from './RecentTab';
+import { ReelsTab } from './ReelsTab';
+import { StudioTab } from '../studio/dashboard/StudioTab';
+import { AssetsTab } from './AssetsTab';
+import { AvatarsTab } from './AvatarsTab';
+import { BrandKitsTab } from './BrandKitsTab';
+import { TeamTab } from './TeamTab';
+import { OnboardingBanner } from './OnboardingBanner';
+import { isTab, type DashboardTab } from './tabsConfig';
+import { VimTourProvider, useVimTour } from '../tour/VimTourProvider';
+import { useVimotionRole } from '../auth/useVimotionRole';
+import { useVimotionDocumentChrome } from '../brand/useVimotionDocumentChrome';
+import { useVimotionNativeShell } from '../native/useVimotionNativeShell';
+
+export function DashboardLayout() {
+    useVimotionDocumentChrome();
+    const instituteId = getInstituteId();
+    return (
+        <VimTourProvider instituteId={instituteId}>
+            <DashboardShell />
+        </VimTourProvider>
+    );
+}
+
+function DashboardShell() {
+    useVimotionNativeShell();
+    const navigate = useNavigate();
+    const instituteId = getInstituteId();
+    const search = useSearch({ strict: false }) as { tab?: string; videoId?: string };
+    const requestedTab: DashboardTab = isTab(search.tab) ? search.tab : 'recent';
+    const { isAdmin } = useVimotionRole();
+    // Team tab is admin-only. If a content creator deep-links to ?tab=team,
+    // silently fall back to Recent — no redirect, no toast.
+    const tab: DashboardTab = requestedTab === 'team' && !isAdmin ? 'recent' : requestedTab;
+    const videoId = typeof search.videoId === 'string' && search.videoId ? search.videoId : null;
+    const { startTourIfNew } = useVimTour();
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+    // First-time auto-start: dashboard tour kicks in on the recent tab (the
+    // landing tab) once anchors are mounted. The Composer tour kicks in the
+    // first time the user lands on the Create tab. Both are gated by their
+    // own seen-flags so users see each one exactly once.
+    useEffect(() => {
+        if (videoId) return; // production view — no tour
+        const id = window.setTimeout(() => {
+            if (tab === 'create') {
+                startTourIfNew('vim-composer');
+            } else {
+                startTourIfNew('vim-dashboard');
+            }
+        }, 600);
+        return () => window.clearTimeout(id);
+    }, [tab, videoId, startTourIfNew]);
+
+    const setTab = (next: DashboardTab) => {
+        // Switching tabs clears any pinned videoId so the user lands on the
+        // tab content, not the production view of an unrelated video.
+        navigate({
+            to: '/vim/dashboard',
+            search: { tab: next },
+            replace: true,
+        });
+    };
+
+    const onEditCurrent = (params: {
+        videoId: string;
+        htmlUrl: string;
+        audioUrl: string;
+        wordsUrl: string;
+        apiKey: string;
+        orientation: string;
+    }) => {
+        navigate({
+            to: '/vim/edit/$videoId',
+            params: { videoId: params.videoId },
+            search: {
+                htmlUrl: params.htmlUrl,
+                audioUrl: params.audioUrl || undefined,
+                wordsUrl: params.wordsUrl || undefined,
+                avatarUrl: undefined,
+                apiKey: params.apiKey || undefined,
+                orientation: params.orientation || 'landscape',
+                kind: undefined,
+                projectId: undefined,
+                focusTime: undefined,
+            },
+        });
+    };
+
+    // The Create tab and the per-video production view both host the
+    // full-bleed VideoConsoleWorkspace. Wrapping either in the constrained
+    // max-w-5xl + p-8 main column would crop the canvas and double-scroll.
+    const isProductionView = !!videoId;
+    const isFullBleed = isProductionView || tab === 'create';
+
+    return (
+        // h-screen (not min-h-screen) bounds the shell to one viewport so only
+        // <main> scrolls — the sidebar + topbar stay pinned regardless of
+        // content length.
+        <div className="pt-safe pb-safe flex h-screen w-screen overflow-hidden bg-[#FAFAF7]">
+            <Sidebar instituteId={instituteId} activeTab={tab} onTabChange={setTab} />
+
+            <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                <SheetContent side="left" className="w-72 p-0 sm:max-w-xs md:hidden">
+                    <SidebarContent
+                        instituteId={instituteId}
+                        activeTab={tab}
+                        onTabChange={setTab}
+                        onNavigate={() => setMobileNavOpen(false)}
+                    />
+                </SheetContent>
+            </Sheet>
+
+            <div className="flex min-w-0 flex-1 flex-col">
+                <Topbar instituteId={instituteId} activeTab={tab} />
+
+                {/* Onboarding banner sits between Topbar and main on every tab
+                    EXCEPT the production view (where the user is already deep
+                    in a specific video). It self-hides once a default brand
+                    kit exists or the user has dismissed it.
+                    `empty:hidden` on the inner wrapper collapses it to zero
+                    height when OnboardingBanner returns null — otherwise the
+                    `pt-*` would reserve 16–24px of empty space for the ~95%
+                    of users who have a kit / have dismissed. */}
+                {!isProductionView && (
+                    <div className="shrink-0 px-4 sm:px-6 lg:px-8">
+                        <div className="mx-auto max-w-5xl pt-4 empty:hidden sm:pt-6">
+                            <OnboardingBanner />
+                        </div>
+                    </div>
+                )}
+
+                {isFullBleed ? (
+                    <main className="min-h-0 flex-1 overflow-hidden">
+                        {isProductionView ? (
+                            <VideoConsoleWorkspace
+                                key={`prod-${videoId}`}
+                                showHistorySidebar={false}
+                                initialVideoId={videoId}
+                                onEdit={onEditCurrent}
+                                vimMode
+                            />
+                        ) : (
+                            <VideoConsoleWorkspace
+                                showHistorySidebar={false}
+                                onEdit={onEditCurrent}
+                                vimMode
+                            />
+                        )}
+                    </main>
+                ) : (
+                    <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+                        <div className="mx-auto max-w-5xl space-y-6">
+                            {tab === 'recent' && <RecentTab />}
+                            {tab === 'reels' && <ReelsTab />}
+                            {tab === 'studio' && <StudioTab />}
+                            {tab === 'assets' && <AssetsTab />}
+                            {tab === 'avatars' && <AvatarsTab />}
+                            {tab === 'brand-kits' && <BrandKitsTab />}
+                            {tab === 'team' && <TeamTab />}
+                        </div>
+                    </main>
+                )}
+
+                <BottomTabBar
+                    activeTab={tab}
+                    onTabChange={setTab}
+                    onMoreClick={() => setMobileNavOpen(true)}
+                />
+            </div>
+        </div>
+    );
+}

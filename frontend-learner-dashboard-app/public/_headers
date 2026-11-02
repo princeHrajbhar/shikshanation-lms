@@ -1,0 +1,146 @@
+# Cloudflare Pages Headers Configuration
+# ========================================
+# 
+# IMPORTANT: For SPAs, Cloudflare matches headers against the REQUEST URL path,
+# NOT the file being served. So /audience-response matches even though index.html is served.
+#
+# The simplest solution for iframe embedding is to NOT set any frame restrictions globally,
+# and ONLY set them on routes that should be protected (if needed).
+
+# ============================================
+# EMBEDDABLE ROUTES - Allow iframe embedding from anywhere
+# ============================================
+# These routes should be embeddable on external websites
+
+/audience-response
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/audience-response/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/live-class-guest/embed
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/live-class-guest/embed/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/learner-invitation-response
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/learner-invitation-response/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Site Assistant iframe, injected by /site-assistant.js on institutes' own
+# websites. Must stay frameable: never add X-Frame-Options / frame-ancestors.
+/site-assistant-embed
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/site-assistant-embed/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# ============================================
+# ALL OTHER ROUTES - Basic security headers only
+# ============================================
+# NOTE: We deliberately do NOT set X-Frame-Options or frame-ancestors here
+# to avoid conflicts with embeddable routes.
+# If you need iframe protection on specific routes, add them individually above.
+
+/*
+  X-Content-Type-Options: nosniff
+  X-XSS-Protection: 1; mode=block
+  Referrer-Policy: no-referrer-when-downgrade
+
+# ============================================
+# STATIC ASSET CACHING
+# ============================================
+
+# NOTE: deliberately NO `immutable` on js/css.
+#
+# These rules match the REQUEST path (see the warning at the top of this file),
+# so anything served under a .js/.css URL inherits them — including the SPA
+# fallback Pages returns when a chunk is missing. `immutable` told the browser
+# never to revalidate, which meant a single bad response got pinned for a year
+# and location.reload() (our chunk-error recovery) read it back out of cache
+# instead of refetching. Filenames are content-hashed AND commit-SHA suffixed,
+# so the long max-age still gives us full cache reuse; dropping `immutable`
+# only costs a conditional request on an explicit reload.
+#
+# functions/assets/[[path]].ts is the primary defence — it turns a missing
+# asset into an uncacheable 404 so no bad body reaches the cache at all.
+
+/*.js
+  Cache-Control: public, max-age=31536000
+
+/*.css
+  Cache-Control: public, max-age=31536000
+
+# The Site Assistant loader keeps ONE unhashed URL that institutes paste into
+# their own sites, so the year-long /*.js cache above must not apply to it:
+# a fix would otherwise take a year to reach their visitors.
+/site-assistant.js
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/*.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.jpg
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.jpeg
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.gif
+  Cache-Control: public, max-age=31536000, immutable
+
+# NOTE: deliberately NO blanket rule for .ico.
+#
+# /favicon.ico is answered per-institute by functions/_middleware.ts, which sets
+# its own short cache-control. The old `/*.ico immutable` rule matched the
+# REQUEST path (see the warning at the top of this file), so it pinned whichever
+# mark a visitor first received for a year — on white-label domains that was the
+# Vacademy "V", and no deploy could dislodge it.
+
+/*.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.woff
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.ttf
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.eot
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service workers - no cache
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/service-worker.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/firebase-messaging-sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.webmanifest
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# WebAssembly core of the premium teacher avatar (@spatius/avatarkit)
+/assets/*.wasm
+  Content-Type: application/wasm
+  Cache-Control: public, max-age=31536000, immutable

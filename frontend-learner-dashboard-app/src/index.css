@@ -1,0 +1,1696 @@
+/* Catalogue Design Tokens - Clean, minimal design system */
+@import './styles/catalogue-tokens.css';
+/* Catalogue Color Themes & Border Radius Variants */
+@import './styles/catalogue-themes.css';
+/* Catalogue Animations - Entrance, hover, scroll effects */
+@import './styles/catalogue-animations.css';
+/* Play Theme - Duolingo-inspired gamified skin */
+@import './styles/play-theme.css';
+/* Cleaner Play Theme - warm, premium, illustrated skin */
+@import './styles/cleaner-play-theme.css';
+/* Corporate Theme - restrained, dense, structural skin */
+@import './styles/corporate-theme.css';
+/* Institute UI axes - corners / density / gradient (data-ui-* on <html>).
+   Imported last of the skin sheets so its --play-radius-* definitions,
+   which express the Play radii against --radius, win over the literals
+   play-theme.css used to hardcode — and so an explicitly-chosen axis beats
+   a skin's house defaults on the specificity tie (both are 0,1,1). */
+@import './styles/ui-axes.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Arabic script fallback (i18n Phase 1). Self-hosted Noto Naskh Arabic —
+   variable-weight file (400–700), Arabic subset only. unicode-range scopes it
+   to Arabic-script codepoints, so Latin UI text keeps rendering in the fonts
+   earlier in the --app-font-family chain and this face only kicks in once
+   Arabic content exists. Bundled locally so Arabic renders offline in the
+   Capacitor/Electron builds. Source: fonts.google.com (OFL), v44. */
+@font-face {
+  font-family: 'Noto Naskh Arabic';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('./assets/fonts/noto-naskh-arabic/noto-naskh-arabic-arabic-wght.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC, U+102E0-102FB, U+10E60-10E7E, U+10EC2-10EC4, U+10EFC-10EFF, U+1EE00-1EE03, U+1EE05-1EE1F, U+1EE21-1EE22, U+1EE24, U+1EE27, U+1EE29-1EE32, U+1EE34-1EE37, U+1EE39, U+1EE3B, U+1EE42, U+1EE47, U+1EE49, U+1EE4B, U+1EE4D-1EE4F, U+1EE51-1EE52, U+1EE54, U+1EE57, U+1EE59, U+1EE5B, U+1EE5D, U+1EE5F, U+1EE61-1EE62, U+1EE64, U+1EE67-1EE6A, U+1EE6C-1EE72, U+1EE74-1EE77, U+1EE79-1EE7C, U+1EE7E, U+1EE80-1EE89, U+1EE8B-1EE9B, U+1EEA1-1EEA3, U+1EEA5-1EEA9, U+1EEAB-1EEBB, U+1EEF0-1EEF1;
+}
+
+/* Safe area insets for Capacitor (iOS notch, Android cutout, home indicator).
+   The -20px offset compensates for the app header/nav's own built-in top spacing
+   so the two don't stack into an oversized gap; browsers clamp the resulting
+   negative padding to 0 on devices with small insets. The status-bar ICONS being
+   invisible over a light page is fixed natively via windowLightStatusBar, not
+   here. */
+html, body {
+  padding-top: calc(env(safe-area-inset-top) - 20px);
+  padding-bottom: calc(env(safe-area-inset-bottom) - 20px);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Read-only rich-text (TipTap) content — paragraphs, lists, tables, blockquote.
+   The admin editor stores bare HTML and styles it via its editor class; the
+   learner has no editor, so we mirror the same read-only rules here. Read-only
+   views render the HTML where Tailwind preflight zeroes margins, so paragraphs
+   and blank lines collapse — restore that spacing. Scoped to .rich-text-content
+   (descendant rules only), so only elements carrying that class (e.g. quiz
+   option/question/explanation HTML) are affected. */
+.rich-text-content p {
+  margin: 0 0 0.6em; /* restore paragraph spacing the editor shows */
+}
+.rich-text-content p:last-child {
+  margin-bottom: 0; /* keep single-paragraph cells/options tight */
+}
+.rich-text-content p:empty {
+  min-height: 0.9em; /* preserve intentional blank lines (empty <p></p>) */
+}
+.rich-text-content table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 0.5em 0;
+}
+.rich-text-content th,
+.rich-text-content td {
+  border: 1px solid #e5e7eb; /* neutral-200 */
+  padding: 6px 8px;
+  vertical-align: top;
+  text-align: left;
+}
+.rich-text-content th {
+  background-color: #f9fafb; /* neutral-50 */
+  font-weight: 600;
+}
+.rich-text-content ul {
+  list-style: disc;
+  margin: 0.5em 0;
+  padding-left: 1.5rem;
+}
+.rich-text-content ol {
+  list-style: decimal;
+  margin: 0.5em 0;
+  padding-left: 1.5rem;
+}
+.rich-text-content li {
+  display: list-item;
+  margin: 0.15em 0;
+}
+.rich-text-content blockquote {
+  border-left: 4px solid #e5e7eb; /* neutral-200 */
+  padding-left: 0.875rem;
+  margin: 0.75rem 0;
+  color: #374151; /* neutral-700 */
+}
+/* Headings / rules / emphasis — Tailwind preflight strips these, so restore
+   the read-only rendering the editor shows (e.g. explanation answer-guidance
+   HTML uses <h3>, <hr>, <strong>). */
+.rich-text-content h1 {
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.6em 0 0.4em;
+}
+.rich-text-content h2 {
+  font-size: 1.3em;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.6em 0 0.4em;
+}
+.rich-text-content h3 {
+  font-size: 1.15em;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.6em 0 0.3em;
+}
+.rich-text-content h4,
+.rich-text-content h5,
+.rich-text-content h6 {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 0.5em 0 0.3em;
+}
+.rich-text-content h1:first-child,
+.rich-text-content h2:first-child,
+.rich-text-content h3:first-child {
+  margin-top: 0;
+}
+.rich-text-content hr {
+  border: 0;
+  border-top: 1px solid #e5e7eb; /* neutral-200 */
+  margin: 0.9em 0;
+}
+.rich-text-content strong,
+.rich-text-content b {
+  font-weight: 600;
+}
+
+/* Doubt / reply bodies (learner doubts panel). They render learner- and
+   teacher-authored HTML — often a pasted screenshot — inside a narrow
+   slide-over, so images and long unbroken strings must be contained rather
+   than pushing the panel sideways. Pair with .rich-text-content for spacing. */
+.doubt-html {
+  overflow-wrap: anywhere;
+}
+.doubt-html img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.4em 0;
+  border-radius: 6px;
+}
+.doubt-html p:last-child {
+  margin-bottom: 0;
+}
+
+/* Document slides fill the width in fullscreen. The normal reading measure
+   (max-w-5xl) leaves large side gutters on a fullscreen/presentation view of
+   image-heavy slide decks. Scoped to descendants of the fullscreen element, so
+   it applies no matter which ancestor (or the whole page) is put fullscreen. */
+:fullscreen .doc-fs-fill {
+  max-width: 100% !important;
+}
+:-webkit-full-screen .doc-fs-fill {
+  max-width: 100% !important;
+}
+
+/* Column layout: override the CSS custom property on mobile so the
+   var(--catalogue-grid-cols) used in the inline style collapses to 1 column.
+   CSS custom properties cascade normally, so a stylesheet rule overrides an
+   inline-style definition of the same custom property. */
+@media (max-width: 640px) {
+  .grid-layout-responsive {
+    --catalogue-grid-cols: 1fr !important;
+  }
+
+  /* Opt-in: stack columns bottom-up on mobile (e.g. image-right heroes where
+     the image should lead on phones). Flex replaces grid only under 640px;
+     gap carries over. */
+  .grid-layout-responsive.grid-layout-reverse {
+    display: flex !important;
+    flex-direction: column-reverse;
+    /* The container's inline align-items (grid block-axis, harmless there)
+       becomes the flex CROSS axis here and would shrink-wrap the columns —
+       force full-width stacking. */
+    align-items: stretch !important;
+  }
+}
+
+@layer base {
+  :root {
+    /* ========= Common configs ========= */
+    min-height: 100vh;
+    color: hsl(var(--base-black));
+
+    /* Default UI font. Premium grotesk; the white-label flow (index.html TabBranding)
+       overrides this var at runtime, and Tailwind `font-sans` reads it.
+       'Noto Naskh Arabic' sits before the system fonts so Arabic-script glyphs
+       (its @font-face is unicode-range-scoped to Arabic) render in Naskh
+       instead of whatever the OS falls back to; Latin text never reaches it. */
+    --app-font-family: 'Plus Jakarta Sans', 'Open Sans', 'Noto Naskh Arabic', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+    /* ========= ShadCN variables ========= */
+    --background: 0 0% 100%;
+    /* Page canvas: the surface BEHIND cards (body + the shell's SidebarInset).
+       Defaults to --background, so it is identical to before for every skin.
+       It exists as its own token so a skin can tint the canvas without also
+       tinting the ~100 bg-background usages that mean "white surface" —
+       dialogs, sheets, toasts, active tabs, switch thumbs, outline buttons. */
+    --canvas: var(--background);
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    /* Slightly darker default border to ensure visibility on white surfaces */
+    --border: 210 18% 84%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 8px;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+
+    /* ========= CUSTOM COLORS ========= */
+    /* Neutral surfaces */
+    --surface: 0 0% 100%;
+    --surface-muted: 0 0% 98%;
+
+    /* Typography tokens */
+    --text-primary: 222.2 47.4% 11.2%;
+    --text-secondary: 215.4 16.3% 46.9%;
+    --text-muted: 215.4 16.3% 56%;
+
+    --primary-50: 34 89% 96%;
+    --primary-100: 35 90% 92%;
+    --primary-200: 32 88% 83%;
+    --primary-300: 30 87% 72%;
+    --primary-400: 26 86% 61%;
+    --primary-500: 24 85% 54%;
+
+    /* Secondary palette fallbacks (overridden by theme-provider at runtime) */
+    --secondary-50: 210 40% 98%;
+    --secondary-100: 210 40% 96%;
+    --secondary-200: 210 32% 90%;
+    --secondary-300: 210 24% 82%;
+    --secondary-400: 210 18% 70%;
+    --secondary-500: 210 16% 60%;
+
+    /* Tertiary palette fallbacks (overridden by theme-provider at runtime) */
+    --tertiary-50: 0 0% 99%;
+    --tertiary-100: 0 0% 98%;
+    --tertiary-200: 0 0% 96%;
+    --tertiary-300: 0 0% 92%;
+    --tertiary-400: 0 0% 86%;
+    --tertiary-500: 0 0% 74%;
+
+    /* Nav role fallbacks (overridden by theme-provider at runtime). Matches
+       today's hardcoded sidebar look (white surface, primary-50 active pill,
+       primary-500 active text) — see theme-provider.tsx applyNavRoles. */
+    --nav-surface: 0 0% 100%;
+    --nav-surface-hover: 210 40% 96%;
+    --nav-active: 34 89% 96%;
+    --nav-active-text: 24 85% 54%;
+    --nav-text: 222.2 84% 4.9%;
+
+    --danger-50: 0 100% 99%;
+    --danger-100: 0 86% 97%;
+    --danger-200: 351 100% 96%;
+    --danger-300: 353 100% 90%;
+    --danger-400: 0 81% 78%;
+    --danger-500: 360 76% 68%;
+    --danger-600: 0 90% 63%;
+    --danger-700: 359 83% 55%;
+
+    /* Warning Colors */
+    --warning-50: 45 100% 96%; /* #FFF9EB */
+    --warning-100: 45 90% 88%; /* #FFF0D6 */
+    --warning-200: 43 85% 80%; /* #FFE4B8 */
+    --warning-300: 41 80% 71%; /* #FFD699 */
+    --warning-400: 39 75% 63%; /* #FFC266 */
+    --warning-500: 37 100% 50%; /* #FFA500 */
+    --warning-600: 35 95% 47%; /* #FF9900 */
+    --warning-700: 33 90% 44%; /* #FF8800 */
+
+    /* Success Colors */
+    --success-50: 142 76% 95%; /* #E6F7EF */
+    --success-100: 142 72% 88%; /* #D1F0E2 */
+    --success-200: 142 68% 80%; /* #B3E6D1 */
+    --success-300: 142 64% 71%; /* #8CD9BC */
+    --success-400: 142 60% 63%; /* #66CCA7 */
+    --success-500: 142 56% 54%; /* #40BF91 */
+    --success-600: 142 52% 47%; /* #33A67E */
+    --success-700: 142 48% 40%; /* #26996B */
+
+    /* Info Colors */
+    --info-50: 214 97% 95%; /* #E9F3FF */
+    --info-100: 214 93% 88%; /* #D6E9FF */
+    --info-200: 214 89% 80%; /* #B3D6FF */
+    --info-300: 214 85% 71%; /* #8CC2FF */
+    --info-400: 214 81% 63%; /* #66ADFF */
+    --info-500: 214 77% 54%; /* #4096FF */
+    --info-600: 214 73% 47%; /* #2680FF */
+    --info-700: 214 69% 40%;
+
+    /* Vibrant pastel palette (promoted from scattered hardcoded hex). Single source
+       of truth for the .ui-vibrant theme's decorative pastels; reference via var(),
+       never inline hex in selectors. Kept as hex to preserve exact values. */
+    --pastel-blue: #afd9e8;
+    --pastel-blue-border: #8bc6dc;
+    --pastel-green: #b6e2b6;
+    --pastel-green-border: #94d794;
+    --pastel-yellow: #fff5ba;
+    --pastel-yellow-border: #ffe98a;
+    --pastel-red: #ffb5b5;
+    --pastel-red-border: #ff9b9b;
+    --pastel-purple: #d7bde2;
+    --pastel-purple-border: #c9a7d7;
+    --pastel-orange: #ffdab9;
+    --pastel-orange-border: #ffc899;
+    --pastel-pink: #fbc4c4;
+    --pastel-pink-border: #f7a9a9;
+    --pastel-teal: #b2dfdb;
+    --pastel-teal-border: #93d3cd;
+    --pastel-ink: #0f172a;
+
+    /* ========= Shadow scale (tinted, light mode) ========= */
+    /* Tinted to a cool slate hue rather than pure black; one step per surface type. */
+    --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+    --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+    --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
+    --shadow-lg: 0 12px 28px -6px rgb(15 23 42 / 0.12), 0 4px 8px -4px rgb(15 23 42 / 0.06);
+    --shadow-xl: 0 24px 48px -12px rgb(15 23 42 / 0.18);
+    --shadow-2xl: 0 32px 64px -16px rgb(15 23 42 / 0.24);
+    --shadow-inner: inset 0 2px 4px 0 rgb(15 23 42 / 0.06);
+
+    /* ========= Motion tokens (default / vibrant; play has its own) ========= */
+    --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+    --duration-fast: 150ms;
+    --duration-base: 220ms;
+    --duration-slow: 320ms;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 0 0% 100%; /* keep cards white in dark */
+    --card-foreground: 222.2 47.4% 11.2%; /* readable dark text on white card */
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    /* Match light mode border for consistency on white cards in dark mode */
+    --border: 210 18% 84%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+
+    /* ========= CUSTOM COLORS ========= */
+    --base-primary: 0 0% 9%;
+    --base-secondary: 0 0% 15%;
+    /* Neutral surfaces (dark) */
+    --surface: 222.2 84% 4.9%;
+    --surface-muted: 217.2 32.6% 17.5%;
+    /* Typography tokens (dark) */
+    --text-primary: 210 40% 98%;
+    --text-secondary: 210 40% 96%;
+    --text-muted: 215 20.2% 65.1%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+  /* (Vibrant navbar heading nudge removed 2026-06-11: typography in JSX.) */
+
+  /* (Vibrant sidebar tile interception removed 2026-06-11: active/hover
+     states live in the sidebar item JSX via [.ui-vibrant_&] variants.) */
+
+  /* Course cards and common cards */
+  .ui-vibrant .card,
+  .ui-vibrant .Card,
+  .ui-vibrant .bg-white {
+    border-color: hsl(var(--primary-100)) !important;
+  }
+
+  /* (Orphaned vibrant course-card hooks removed 2026-06-11: course-card-title/
+     course-title/course-card-image/course-card-title-icon/level-badge/course-tag
+     have zero JSX consumers — card styling now lives in CourseCards.tsx.) */
+  .ui-vibrant .course-stats {
+    background: hsl(var(--primary-50));
+    border-color: hsl(var(--primary-200));
+  }
+
+  /* Vibrant text: keep default sizes for clean UI */
+
+  /* ================= Dashboard vibrant enhancements ================ */
+  /* 1) Solid primary stat cards with contrasting text */
+  /* Use defined variables: --primary-50..--primary-500 exist */
+  .ui-vibrant .stat-card-inner {
+    background-color: hsl(var(--primary-500)) !important;
+    border-color: hsl(var(--primary-400)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+  }
+  .ui-vibrant .stat-card-inner .text-gray-900,
+  .ui-vibrant .stat-card-inner .text-gray-800,
+  .ui-vibrant .stat-card-inner .text-gray-700,
+  .ui-vibrant .stat-card-inner .text-gray-600 {
+    color: hsl(var(--primary-foreground)) !important;
+  }
+  .ui-vibrant .stat-card-inner .bg-primary-100 {
+    background-color: hsl(var(--primary-500)) !important;
+  }
+  .ui-vibrant .stat-card-inner .text-primary-600 {
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  /* 2) Vibrant stat card sizing - keep compact */
+
+  /* (Vibrant continue-learning border interception removed 2026-06-11:
+     it recolored the new border-t-primary-300 top rail; JSX self-styles.) */
+  .ui-vibrant .dashboard-user-avatar {
+    background-color: hsl(var(--primary-200)) !important;
+  }
+  .ui-vibrant .dashboard-user-avatar {
+    border: 2px solid hsl(var(--primary-300)) !important;
+  }
+  /* Secondary/Tertiary card variants */
+  .ui-vibrant .card-secondary {
+    background-color: hsl(var(--secondary-50)) !important;
+    border-color: hsl(var(--secondary-200)) !important;
+  }
+  .ui-vibrant .card-tertiary {
+    background-color: hsl(var(--tertiary-50)) !important;
+    border-color: hsl(var(--tertiary-200)) !important;
+  }
+
+  /* (Dead vibrant stat-card category rules removed 2026-06-11:
+     zero JSX consumers; dashboard uses stat-card-{courses,live,assessments}.) */
+
+  /* Prevent double animation conflicts in vibrant mode (GSAP handles it) */
+  .ui-vibrant .animate-fade-in-up {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .ui-vibrant .animate-fade-in-down {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Ensure non-vibrant animated elements retain their final state */
+  .animate-fade-in-up {
+    animation-fill-mode: both;
+  }
+  .animate-fade-in-down {
+    animation-fill-mode: both;
+  }
+
+  /* Vibrant dashboard: clean background */
+
+  /* Vibrant rounding: use Tailwind defaults */
+
+  /* ================= Buttons: subtle vibrant style ================= */
+  .ui-vibrant button.bg-primary-500,
+  .ui-vibrant .btn,
+  .ui-vibrant .my-button {
+    position: relative;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+  }
+
+  /* Vibrant chips using secondary and tertiary palettes */
+  .ui-vibrant .chip-secondary {
+    background-color: hsl(var(--secondary-100)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: hsl(var(--secondary-300)) !important;
+  }
+  .ui-vibrant .chip-secondary-strong {
+    background-color: hsl(var(--secondary-200)) !important;
+    color: hsl(var(--primary)) !important;
+    border-color: hsl(var(--secondary-400)) !important;
+  }
+  .ui-vibrant .chip-tertiary {
+    background-color: hsl(var(--tertiary-100)) !important;
+    color: hsl(var(--text-secondary)) !important;
+    border-color: hsl(var(--tertiary-300)) !important;
+  }
+  .ui-vibrant .chip-tertiary-strong {
+    background-color: hsl(var(--tertiary-200)) !important;
+    color: hsl(var(--text-primary)) !important;
+    border-color: hsl(var(--tertiary-400)) !important;
+  }
+  /* Vibrant button hover: keep subtle */
+
+  /* Vibrant buttons using secondary/tertiary */
+  .ui-vibrant .btn-secondary {
+    background-color: hsl(var(--secondary-500)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: hsl(var(--secondary-400)) !important;
+    box-shadow: inset 0 -1.5px 0 hsl(var(--secondary-300));
+  }
+  .ui-vibrant .btn-secondary:hover {
+    background-color: hsl(var(--secondary-400)) !important;
+    box-shadow: inset 0 -6px 0 hsl(var(--secondary-500));
+  }
+  .ui-vibrant .btn-tertiary {
+    background-color: hsl(var(--tertiary-500)) !important;
+    color: hsl(var(--text-primary)) !important;
+    border-color: hsl(var(--tertiary-400)) !important;
+    box-shadow: inset 0 -1.5px 0 hsl(var(--tertiary-300));
+  }
+  .ui-vibrant .btn-tertiary:hover {
+    background-color: hsl(var(--tertiary-400)) !important;
+    box-shadow: inset 0 -6px 0 hsl(var(--tertiary-500));
+  }
+
+  /* Use neutral backgrounds where possible in vibrant for non-primary surfaces */
+  .ui-vibrant .bg-gray-50 {
+    background-color: hsl(var(--surface-muted)) !important;
+  }
+  .ui-vibrant .bg-white\/80 {
+    background-color: hsl(var(--surface) / 0.8) !important;
+  }
+
+  /* ================= Neutralize excessive primary accents ================= */
+  /* Dashboard stat cards: avoid primary hover text on vibrant solids */
+  .ui-vibrant
+    .stat-card-inner
+    .group:hover
+    [class*="group-hover:text-primary-"] {
+    color: hsl(var(--primary-foreground)) !important;
+  }
+  .ui-vibrant .stat-card-inner .group:hover .lucide-chevron-right {
+    color: hsl(var(--primary-foreground)) !important;
+  }
+  /* (Vibrant sidebar hover/shadow interception removed 2026-06-11:
+     the redesigned sidebar self-styles; hamburger sheet falls back to defaults.) */
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-canvas text-foreground font-sans;
+    /* font-sans resolves to var(--app-font-family) -> Plus Jakarta Sans by default,
+       white-label override at runtime. */
+    font-variation-settings: normal;
+  }
+  /* Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+  .scaled-gap {
+    --scale: 0.5;
+    margin-top: calc((var(--scale) - 1) * 100%);
+  }
+
+  .error-toast {
+    background-color: #fef2f2 !important; /* danger-100 */
+    color: #4b4b4b !important; /* neutral-600 */
+  }
+
+  .error-toast > div {
+    color: #f64c4c !important; /* danger-600 */
+    font-weight: 600 !important;
+    font-size: 16px !important;
+  }
+  .success-toast {
+    background-color: #f2faf6 !important; /* danger-100 */
+    color: #4b4b4b !important; /* neutral-600 */
+  }
+
+  .success-toast > div {
+    color: #47b881 !important; /* danger-600 */
+    font-weight: 600 !important;
+    font-size: 16px !important;
+  }
+}
+
+@layer utilities {
+  /* ================= Typography scale (tokens used across the app) ================ */
+  /* Keep text sizes uniform by using these utilities instead of ad-hoc responsive sizes */
+  .text-title {
+    font-size: 20px; /* 1.25rem */
+    line-height: 28px; /* 1.75rem */
+    letter-spacing: -0.005em;
+  }
+  .text-title-lg {
+    font-size: 24px; /* 1.5rem */
+    line-height: 32px; /* 2rem */
+    letter-spacing: -0.01em;
+  }
+  .text-subtitle {
+    font-size: 18px; /* 1.125rem */
+    line-height: 26px; /* ~1.625rem */
+    letter-spacing: -0.003em;
+  }
+  .text-body {
+    font-size: 16px; /* 1rem */
+    line-height: 24px; /* 1.5rem */
+  }
+  .text-caption {
+    font-size: 13px; /* ~0.8125rem */
+    line-height: 18px; /* ~1.125rem */
+  }
+
+  /* ================= Card and interactive utilities ================= */
+  /* Apply a consistent base for card-like surfaces */
+  .card-base {
+    @apply bg-card text-card-foreground border rounded-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.04)] transition;
+    border-color: hsl(var(--border));
+  }
+  /* Uniform interactive focus and hover states for cards */
+  .card-interactive {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+  .card-hover {
+    @apply hover:shadow-sm;
+    border-color: hsl(var(--border));
+  }
+
+  /* Make borders on white, rounded surfaces more visible by default */
+  .bg-white.border.rounded,
+  .bg-white.border.rounded-md,
+  .bg-white.border.rounded-lg,
+  .bg-white.border.rounded-xl,
+  .bg-white.border.rounded-2xl {
+    border-width: 1.5px !important;
+    border-color: hsl(var(--border) / 0.5) !important; /* lighter by default */
+    transition: border-color 0.18s;
+  }
+  .bg-white.border.rounded-2xl:hover,
+  .bg-white.border.rounded-2xl:focus,
+  .bg-white.border.rounded-2xl:active {
+    border-color: hsl(
+      var(--border)
+    ) !important; /* darker on hover/focus/active */
+  }
+
+  /* In dark mode, many cards still use dark:bg-neutral-900 class; ensure their borders are visible too */
+  .dark .bg-neutral-900.border.rounded,
+  .dark .bg-neutral-900.border.rounded-md,
+  .dark .bg-neutral-900.border.rounded-lg,
+  .dark .bg-neutral-900.border.rounded-xl,
+  .dark .bg-neutral-900.border.rounded-2xl {
+    border-width: 2px !important;
+    border-color: hsl(var(--border)) !important;
+  }
+  /* Neutralize dark hardcoded card backgrounds across the app */
+  .dark .bg-neutral-900 {
+    background-color: hsl(var(--card)) !important;
+  }
+  .dark .hover\:bg-neutral-900:hover {
+    background-color: hsl(var(--card)) !important;
+  }
+  .dark .bg-neutral-900\/70 {
+    background-color: hsl(var(--card) / 0.7) !important;
+  }
+  .dark .bg-neutral-900\/50 {
+    background-color: hsl(var(--card) / 0.5) !important;
+  }
+  .dark .bg-neutral-900\/20 {
+    background-color: hsl(var(--card) / 0.2) !important;
+  }
+  /* Card media utility: 16:10 aspect, rounded top corners, full-bleed */
+  .card-media {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10; /* ~320x200 */
+    overflow: hidden;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+  }
+  .card-media > img,
+  .card-media > picture,
+  .card-media > video,
+  .card-media > canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  /* Disable gradients globally when wrapped with .no-gradients */
+  .no-gradients [class*="bg-gradient-to-"] {
+    background-image: none !important;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-scrollbar: none; /* For IE and Edge */
+    scrollbar-width: none; /* For Firefox */
+  }
+
+  /* Remove remap that forced white to dark; keep white surfaces white */
+
+  /* Common translucent white backgrounds */
+  .dark .bg-white\/95 {
+    background-color: hsl(var(--card) / 0.95) !important;
+  }
+  .dark .bg-white\/80 {
+    background-color: hsl(var(--card) / 0.8) !important;
+  }
+  .dark .bg-white\/50 {
+    background-color: hsl(var(--card) / 0.5) !important;
+  }
+  .dark .bg-white\/30 {
+    background-color: hsl(var(--card) / 0.3) !important;
+  }
+  .dark .bg-white\/20 {
+    background-color: hsl(var(--card) / 0.2) !important;
+  }
+
+  /* Borders */
+  .dark .border-gray-200 {
+    border-color: hsl(var(--border)) !important;
+  }
+  .dark .border-neutral-100 {
+    border-color: hsl(var(--border)) !important;
+  }
+  .dark .border-neutral-200 {
+    border-color: hsl(var(--border)) !important;
+  }
+
+  /* Typography */
+  .dark .text-gray-900 {
+    color: hsl(var(--foreground)) !important;
+  }
+  .dark .text-gray-800 {
+    color: hsl(var(--foreground)) !important;
+  }
+  .dark .text-neutral-900 {
+    color: hsl(var(--foreground)) !important;
+  }
+  .dark .text-neutral-800 {
+    color: hsl(var(--foreground)) !important;
+  }
+  .dark .text-gray-700,
+  .dark .text-neutral-700 {
+    color: hsl(var(--text-secondary)) !important;
+  }
+  .dark .text-gray-600,
+  .dark .text-neutral-600 {
+    color: hsl(var(--text-secondary)) !important;
+  }
+  .dark .text-gray-500,
+  .dark .text-neutral-500 {
+    color: hsl(var(--text-muted)) !important;
+  }
+  .dark .text-gray-400,
+  .dark .text-neutral-400 {
+    color: hsl(var(--text-muted)) !important;
+  }
+
+  /* Primary badge remaps for dark mode (avoid too-light backgrounds) */
+  .dark .bg-primary-50 {
+    background-color: hsl(var(--primary-500) / 0.08) !important;
+  }
+  .dark .bg-primary-100 {
+    background-color: hsl(var(--primary-500) / 0.15) !important;
+  }
+  .dark .hover\:bg-primary-200:hover {
+    background-color: hsl(var(--primary-500) / 0.25) !important;
+  }
+  .dark .text-primary-700 {
+    color: hsl(var(--primary-200)) !important;
+  }
+  .dark .border-primary-200 {
+    border-color: hsl(var(--primary-400)) !important;
+  }
+
+  /* Gradients using white stops */
+  .dark .from-white {
+    --tw-gradient-from: hsl(var(--card)) !important;
+    --tw-gradient-to: rgb(255 255 255 / 0) !important;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+  }
+  .dark .to-white {
+    --tw-gradient-to: hsl(var(--card)) !important;
+  }
+  .dark .via-white {
+    --tw-gradient-stops: var(--tw-gradient-from), hsl(var(--card)),
+      var(--tw-gradient-to) !important;
+  }
+
+  .dark .from-white\/90 {
+    --tw-gradient-from: hsl(var(--card) / 0.9) !important;
+  }
+  .dark .from-white\/80 {
+    --tw-gradient-from: hsl(var(--card) / 0.8) !important;
+  }
+  .dark .to-white\/80 {
+    --tw-gradient-to: hsl(var(--card) / 0.8) !important;
+  }
+  .dark .to-white\/30 {
+    --tw-gradient-to: hsl(var(--card) / 0.3) !important;
+  }
+
+  /* Primary gradients (light chips too bright in dark) */
+  .dark .from-primary-50 {
+    --tw-gradient-from: hsl(var(--primary-500) / 0.12) !important;
+    --tw-gradient-to: rgb(255 255 255 / 0) !important;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+  }
+  .dark .to-primary-50 {
+    --tw-gradient-to: hsl(var(--primary-500) / 0.12) !important;
+  }
+  .dark .from-primary-100 {
+    --tw-gradient-from: hsl(var(--primary-500) / 0.18) !important;
+    --tw-gradient-to: rgb(255 255 255 / 0) !important;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+  }
+  .dark .to-primary-100 {
+    --tw-gradient-to: hsl(var(--primary-500) / 0.18) !important;
+  }
+  .dark .via-primary-50 {
+    --tw-gradient-stops: var(--tw-gradient-from), hsl(var(--primary-500) / 0.14),
+      var(--tw-gradient-to) !important;
+  }
+
+  /* Primary text remap for mid tones */
+  .dark .text-primary-600 {
+    color: hsl(var(--primary-200)) !important;
+  }
+
+  /* Note: We intentionally keep gradients enabled globally.
+       We only remap white stops in dark mode above to avoid bright patches. */
+}
+
+@layer components {
+  .table-shadow-left {
+    box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.1);
+  }
+
+  .table-shadow-right {
+    box-shadow: -4px 0 8px -2px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Modern sidebar animations */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  .animate-slide-in-left {
+    animation: slideInLeft 0.3s ease-out forwards;
+  }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.3s ease-out forwards;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    height: 8px; /* for horizontal scrollbar */
+    width: 8px; /* for vertical scrollbar */
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgb(
+      var(--primary-200)
+    ); /* assuming primary-200 is defined in your CSS variables */
+    border-radius: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--primary-300));
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-canvas text-foreground;
+  }
+}
+
+/* ========== Vibrant UI additive styles (opt-in via .ui-vibrant on container) ========== */
+@layer components {
+  .ui-vibrant .stat-card .text-xl,
+  .ui-vibrant .stat-card .text-2xl,
+  .ui-vibrant .stat-card .text-base,
+  .ui-vibrant .stat-card .text-sm {
+    letter-spacing: 0.1px;
+  }
+
+  .ui-vibrant .continue-learning-card .text-sm,
+  .ui-vibrant .continue-learning-card .text-xs {
+    font-size: 0.95rem; /* slight bump for readability for kids */
+  }
+
+  .ui-vibrant .continue-learning-card .slide-title {
+    font-weight: 700;
+  }
+
+  .ui-vibrant .continue-learning-card .slide-description {
+    opacity: 0.95;
+  }
+
+  /* Solid playful chips for icons using existing semantic colors */
+  .ui-vibrant .bg-primary-100 {
+    background-color: hsl(var(--primary-300) / 0.25) !important;
+  }
+  .ui-vibrant .text-primary-600 {
+    color: hsl(var(--primary-500)) !important;
+  }
+
+  /* Use success/info/warning for multi-colored accents */
+  .ui-vibrant .badge-success,
+  .ui-vibrant .bg-success-100 {
+    background-color: hsl(var(--success-100)) !important;
+    color: hsl(var(--success-700)) !important;
+  }
+  .ui-vibrant .badge-info,
+  .ui-vibrant .bg-info-100 {
+    background-color: hsl(var(--info-100)) !important;
+    color: hsl(var(--info-700)) !important;
+  }
+  .ui-vibrant .badge-warning,
+  .ui-vibrant .bg-warning-100 {
+    background-color: hsl(var(--warning-100)) !important;
+    color: hsl(var(--warning-700)) !important;
+  }
+  .ui-vibrant .badge-secondary {
+    background-color: hsl(var(--secondary-100)) !important;
+    color: hsl(var(--secondary-500)) !important;
+    border: 1px solid hsl(var(--secondary-300)) !important;
+  }
+  .ui-vibrant .badge-tertiary {
+    background-color: hsl(var(--tertiary-100)) !important;
+    color: hsl(var(--text-secondary)) !important;
+    border: 1px solid hsl(var(--tertiary-300)) !important;
+  }
+
+  /* ========== Vibrant Pastel Palette (theme-agnostic) ========== */
+  /* Fixed pastel utilities to use across vibrant widgets regardless of theme */
+  .ui-vibrant .pastel-bg-blue {
+    background-color: var(--pastel-blue) !important;
+  }
+  .ui-vibrant .pastel-border-blue {
+    border-color: var(--pastel-blue) !important;
+  }
+  .ui-vibrant .pastel-bg-green {
+    background-color: var(--pastel-green) !important;
+  }
+  .ui-vibrant .pastel-border-green {
+    border-color: var(--pastel-green) !important;
+  }
+  .ui-vibrant .pastel-bg-yellow {
+    background-color: var(--pastel-yellow) !important;
+  }
+  .ui-vibrant .pastel-border-yellow {
+    border-color: var(--pastel-yellow) !important;
+  }
+  .ui-vibrant .pastel-bg-red {
+    background-color: var(--pastel-red) !important;
+  }
+  .ui-vibrant .pastel-border-red {
+    border-color: var(--pastel-red) !important;
+  }
+  .ui-vibrant .pastel-bg-purple {
+    background-color: var(--pastel-purple) !important;
+  }
+  .ui-vibrant .pastel-border-purple {
+    border-color: var(--pastel-purple) !important;
+  }
+  .ui-vibrant .pastel-bg-orange {
+    background-color: var(--pastel-orange) !important;
+  }
+  .ui-vibrant .pastel-border-orange {
+    border-color: var(--pastel-orange) !important;
+  }
+  .ui-vibrant .pastel-bg-pink {
+    background-color: var(--pastel-pink) !important;
+  }
+  .ui-vibrant .pastel-border-pink {
+    border-color: var(--pastel-pink) !important;
+  }
+  .ui-vibrant .pastel-bg-teal {
+    background-color: var(--pastel-teal) !important;
+  }
+  .ui-vibrant .pastel-border-teal {
+    border-color: var(--pastel-teal) !important;
+  }
+
+  /* Pastel chips and badges */
+  .ui-vibrant .pastel-chip {
+    color: var(--pastel-ink) !important;
+    border-width: 1px !important;
+  }
+  .ui-vibrant .pastel-chip-blue {
+    background-color: var(--pastel-blue) !important;
+    border-color: var(--pastel-blue-border) !important;
+    color: var(--pastel-ink) !important;
+  }
+  .ui-vibrant .pastel-chip-green {
+    background-color: var(--pastel-green) !important;
+    border-color: var(--pastel-green-border) !important;
+    color: var(--pastel-ink) !important;
+  }
+  .ui-vibrant .pastel-chip-yellow {
+    background-color: var(--pastel-yellow) !important;
+    border-color: var(--pastel-yellow-border) !important;
+    color: var(--pastel-ink) !important;
+  }
+  .ui-vibrant .pastel-chip-red {
+    background-color: var(--pastel-red) !important;
+    border-color: var(--pastel-red-border) !important;
+    color: var(--pastel-ink) !important;
+  }
+  .ui-vibrant .pastel-chip-purple {
+    background-color: var(--pastel-purple) !important;
+    border-color: var(--pastel-purple-border) !important;
+    color: var(--pastel-ink) !important;
+  }
+  .ui-vibrant .pastel-chip-orange {
+    background-color: var(--pastel-orange) !important;
+    border-color: var(--pastel-orange-border) !important;
+    color: var(--pastel-ink) !important;
+  }
+  .ui-vibrant .pastel-chip-pink {
+    background-color: var(--pastel-pink) !important;
+    border-color: var(--pastel-pink-border) !important;
+    color: var(--pastel-ink) !important;
+  }
+  .ui-vibrant .pastel-chip-teal {
+    background-color: var(--pastel-teal) !important;
+    border-color: var(--pastel-teal-border) !important;
+    color: var(--pastel-ink) !important;
+  }
+
+  /* Tab trigger active override helper */
+  .ui-vibrant .pastel-tab-active[data-state="active"] {
+    background-color: var(--pastel-blue) !important;
+    color: var(--pastel-ink) !important;
+  }
+
+  /* ========== Playful white surfaces (vibrant) ========== */
+  /* Subtle dot pattern that respects the current theme palette */
+  .ui-vibrant .bg-white,
+  .ui-vibrant .card,
+  .ui-vibrant .Card {
+    background-image: radial-gradient(
+        hsl(var(--primary-50) / 0.45) 1px,
+        transparent 1px
+      ),
+      radial-gradient(hsl(var(--secondary-50) / 0.35) 1px, transparent 1px);
+    background-size: 24px 24px, 32px 32px;
+    background-position: 0 0, 12px 12px;
+  }
+
+  /* Opt‑in helpers for stronger patterns on hero/empty states */
+  .ui-vibrant .playful-surface {
+    background-color: hsl(var(--surface));
+    background-image: radial-gradient(
+        hsl(var(--primary-50) / 0.6) 1px,
+        transparent 1px
+      ),
+      radial-gradient(hsl(var(--tertiary-50) / 0.6) 1.2px, transparent 1px);
+    background-size: 22px 22px, 28px 28px;
+    background-position: 0 0, 11px 11px;
+  }
+
+  .ui-vibrant .playful-surface--stripes {
+    background-image: linear-gradient(
+        135deg,
+        hsl(var(--primary-50) / 0.35) 12.5%,
+        transparent 12.5%,
+        transparent 50%,
+        hsl(var(--primary-50) / 0.35) 50%,
+        hsl(var(--primary-50) / 0.35) 62.5%,
+        transparent 62.5%,
+        transparent 100%
+      ),
+      linear-gradient(
+        135deg,
+        hsl(var(--secondary-50) / 0.35) 12.5%,
+        transparent 12.5%,
+        transparent 50%,
+        hsl(var(--secondary-50) / 0.35) 50%,
+        hsl(var(--secondary-50) / 0.35) 62.5%,
+        transparent 62.5%,
+        transparent 100%
+      );
+    background-size: 16px 16px, 16px 16px;
+    background-position: 0 0, 8px 8px;
+  }
+
+  /* Escape hatch to opt-out on specific elements */
+  .ui-vibrant .no-surface-pattern {
+    background-image: none !important;
+  }
+
+  /* ========== Additional playful surface variants (opt-in) ========== */
+  /* Crisp grid using theme tints */
+  .ui-vibrant .playful-surface--grid {
+    background-color: hsl(var(--surface));
+    background-image: repeating-linear-gradient(
+        0deg,
+        hsl(var(--secondary-50) / 0.45) 0 1px,
+        transparent 1px 16px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        hsl(var(--secondary-50) / 0.45) 0 1px,
+        transparent 1px 16px
+      );
+    background-size: 16px 16px, 16px 16px;
+  }
+
+  /* Playful bubbles using radial spots */
+  .ui-vibrant .playful-surface--bubbles {
+    background-color: hsl(var(--surface));
+    background-image: radial-gradient(
+        circle at 20% 28%,
+        hsl(var(--primary-50) / 0.6) 0 12px,
+        transparent 13px
+      ),
+      radial-gradient(
+        circle at 78% 22%,
+        hsl(var(--info-50) / 0.55) 0 10px,
+        transparent 11px
+      ),
+      radial-gradient(
+        circle at 64% 76%,
+        hsl(var(--success-50) / 0.55) 0 14px,
+        transparent 15px
+      ),
+      radial-gradient(
+        circle at 18% 78%,
+        hsl(var(--warning-50) / 0.45) 0 9px,
+        transparent 10px
+      );
+    background-size: auto;
+    background-repeat: no-repeat;
+  }
+
+  /* Sunburst rays from corners (very subtle) */
+  .ui-vibrant .playful-surface--rays {
+    background-color: hsl(var(--surface));
+    background-image: conic-gradient(
+        from 225deg at 0% 0%,
+        hsl(var(--primary-50) / 0.45) 0 22deg,
+        transparent 22deg
+      ),
+      conic-gradient(
+        from 315deg at 100% 0%,
+        hsl(var(--info-50) / 0.4) 0 18deg,
+        transparent 18deg
+      );
+    background-size: 100% 100%, 100% 100%;
+    background-repeat: no-repeat;
+  }
+
+  /* Corner doodles using radial accents */
+  .ui-vibrant .playful-surface--corners {
+    background-color: hsl(var(--surface));
+    background-image: radial-gradient(
+        24px 24px at 12px 12px,
+        hsl(var(--primary-50) / 0.7) 0 12px,
+        transparent 13px
+      ),
+      radial-gradient(
+        22px 22px at calc(100% - 12px) 12px,
+        hsl(var(--secondary-50) / 0.6) 0 11px,
+        transparent 12px
+      ),
+      radial-gradient(
+        26px 26px at 12px calc(100% - 12px),
+        hsl(var(--info-50) / 0.6) 0 13px,
+        transparent 14px
+      ),
+      radial-gradient(
+        20px 20px at calc(100% - 12px) calc(100% - 12px),
+        hsl(var(--success-50) / 0.6) 0 10px,
+        transparent 11px
+      );
+    background-repeat: no-repeat;
+    background-size: auto;
+  }
+
+  /* Soft noise/grain effect (very light, theme-agnostic) */
+  .ui-vibrant .playful-surface--noise {
+    background-color: hsl(var(--surface));
+    background-image: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.018) 0 2px,
+        rgba(0, 0, 0, 0) 2px 4px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        rgba(0, 0, 0, 0.012) 0 2px,
+        rgba(0, 0, 0, 0) 2px 4px
+      );
+    background-blend-mode: multiply;
+  }
+}
+
+/* (Dead [class*="stat-card--"] pastel-text rules removed 2026-06-11: no JSX emits stat-card-- classes.) */
+
+/* Vimeo slide player: make the SDK-created iframe fill its container.
+   Without this, an unavailable video collapses to a thin strip (the @vimeo
+   responsive aspect-ratio wrapper can't size itself when oembed data is
+   missing). Scoped to .vimeo-fill so it never affects other iframes. The rule
+   targets the async-injected iframe whenever it appears. */
+.vimeo-fill,
+.vimeo-fill > div {
+  width: 100%;
+  height: 100%;
+}
+.vimeo-fill iframe {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  border: 0;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Rich-text content (TipTap/HTML from the admin editor, rendered via
+   dangerouslySetInnerHTML). The Tailwind typography plugin is NOT installed in
+   this app, so the `prose` utility is a no-op and injected tables / headings /
+   lists would render with bare browser defaults — which is why admin-authored
+   assignment descriptions looked "too simple" on the learner side. This class
+   restores readable structure (bordered tables, sized headings, real lists)
+   wherever rich text is displayed. */
+.richtext-content {
+  color: #374151;
+  line-height: 1.7;
+  word-break: break-word;
+}
+.richtext-content h1 { font-size: 1.5rem; font-weight: 700; color: #111827; margin: 1.25rem 0 0.75rem; line-height: 1.25; }
+.richtext-content h2 { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 1.25rem 0 0.5rem; line-height: 1.3; }
+.richtext-content h3 { font-size: 1.125rem; font-weight: 600; color: #111827; margin: 1rem 0 0.5rem; }
+.richtext-content h4,
+.richtext-content h5,
+.richtext-content h6 { font-size: 1rem; font-weight: 600; color: #111827; margin: 0.75rem 0 0.5rem; }
+.richtext-content p { margin: 0.5rem 0; }
+/* Preserve intentional blank lines (empty <p></p> separators between sections)
+   that the editor shows but Tailwind's reset would otherwise collapse to nothing
+   — e.g. an assignment Task Description spaced into sections. */
+.richtext-content p:empty { min-height: 0.9em; }
+
+/* Rich-text inside a DARK catalogue. The base .richtext-content rule above
+   hardcodes color:#374151 (and #111827 for headings) because it is shared with
+   the study-library / assignment surfaces, which are always light. On a dark
+   catalogue that renders body copy as dim grey on near-black. Scope the
+   override to the catalogue wrapper ([data-catalogue-theme] + .dark) so ONLY a
+   dark catalogue is affected and every other .richtext-content consumer keeps
+   its existing colors. */
+[data-catalogue-theme].dark .richtext-content,
+.dark [data-catalogue-theme] .richtext-content {
+  color: hsl(var(--catalogue-text-secondary));
+}
+[data-catalogue-theme].dark .richtext-content :is(h1, h2, h3, h4, h5, h6),
+.dark [data-catalogue-theme] .richtext-content :is(h1, h2, h3, h4, h5, h6),
+[data-catalogue-theme].dark .richtext-content :is(strong, b),
+.dark [data-catalogue-theme] .richtext-content :is(strong, b) {
+  color: hsl(var(--catalogue-text-primary));
+}
+
+/* Form controls inside a DARK catalogue (lead/enroll/checkout modals). The
+   shared design-system MyInput hardcodes border-neutral-300 + text-neutral-600
+   because it is used by every form in the app, most of which are always light.
+   On a dark catalogue that reads as a harsh bright outline around dim text.
+   Rather than re-theming the shared component, re-point the colors for controls
+   that appear inside the catalogue wrapper only. The attribute+class selector
+   outranks the Tailwind utility, so no !important is needed. */
+[data-catalogue-theme].dark :is(input, textarea, select),
+.dark [data-catalogue-theme] :is(input, textarea, select) {
+  border-color: hsl(var(--catalogue-border));
+  color: hsl(var(--catalogue-text-primary));
+}
+[data-catalogue-theme].dark :is(input, textarea)::placeholder,
+.dark [data-catalogue-theme] :is(input, textarea)::placeholder {
+  color: hsl(var(--catalogue-text-muted));
+}
+/* Native select popups inherit the page background on most platforms; give the
+   options an explicit surface so they are not white-on-white. */
+[data-catalogue-theme].dark select option,
+.dark [data-catalogue-theme] select option {
+  background-color: hsl(var(--catalogue-bg-elevated));
+  color: hsl(var(--catalogue-text-primary));
+}
+
+/* ─── react-phone-input-2 — overlap fix + design-system surface ─────────────
+   The library ships six mutually-incompatible stylesheets. This app used to
+   import two of them (`bootstrap.css` from the design-system field,
+   `style.css` from CustomFieldRenderer); Vite concatenates both into one
+   bundle, so the two definitions of the same selectors fought:
+
+     bootstrap  .country-list .country { padding-left: 46px }
+                .country-list .flag    { position: absolute; left: 13px }
+                .selected-flag .arrow  { left: 29px }
+     style      .country-list .country { padding-left:  9px }
+                .selected-flag .arrow  { left: 20px }
+
+   Whichever landed last won per-property, and the losing halves still applied:
+   an absolutely-positioned flag over a row with no left inset put the flag ON
+   TOP of the country name, and a 20px arrow offset put the dropdown caret on
+   top of the 25px-wide selected flag. Every consumer now imports
+   `bootstrap.css` only; the geometry below re-declares the load-bearing pairs
+   explicitly so a future stray import of another variant cannot bring the
+   overlap back.
+
+   Scope note: this block deliberately does NOT set width, height or padding on
+   `.form-control` / `.selected-flag`. Six call sites size the widget
+   themselves (`!h-10`, `!h-11`, `!ps-12`, `!w-10`), and the dropdown — which
+   none of them style — is where the bug actually lived.
+
+   NOT inside `@layer components`: Tailwind tree-shakes user layers against
+   class names it can find in the source, and `.react-tel-input` is emitted by
+   the library at runtime, so a layered version of this block silently lost two
+   thirds of its rules. Plain top-level CSS is never purged.
+
+   Sprite geometry: bootstrap's flags are 25×20, hence the 12px gutter, the
+   -10px (half-height) centering offset and the 48px row inset. */
+
+/* ── The number field ─────────────────────────────────────────────────────── */
+.react-tel-input.react-tel-input .form-control {
+  font-family: inherit;
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--input));
+  border-radius: max(0px, calc(var(--radius) - 2px));
+}
+.react-tel-input.react-tel-input .form-control::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+/* bootstrap.css hardcodes a Bootstrap-blue focus glow. */
+.react-tel-input.react-tel-input .form-control:focus {
+  outline: none;
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 1px hsl(var(--ring));
+}
+.react-tel-input.react-tel-input .form-control.invalid-number {
+  border-color: hsl(var(--danger-500));
+}
+
+/* ── The country button ───────────────────────────────────────────────────── */
+.react-tel-input.react-tel-input .flag-dropdown {
+  border-right: 1px solid hsl(var(--input));
+  border-radius: max(0px, calc(var(--radius) - 2px)) 0 0
+    max(0px, calc(var(--radius) - 2px));
+}
+.react-tel-input.react-tel-input .flag-dropdown.open,
+.react-tel-input.react-tel-input .flag-dropdown.open .selected-flag,
+.react-tel-input.react-tel-input .selected-flag:hover,
+.react-tel-input.react-tel-input .selected-flag:focus {
+  background-color: hsl(var(--accent));
+}
+/* bootstrap.css paints its own blue focus slab through this pseudo-element. */
+.react-tel-input.react-tel-input .selected-flag::before {
+  display: none;
+}
+.react-tel-input.react-tel-input .selected-flag .flag {
+  position: absolute;
+  top: 50%;
+  margin-top: -10px;
+}
+/* Absolute, not relative: the flag beside it is out of flow, so a relative
+   arrow is laid out from the padding edge — which is what put the caret on top
+   of the flag once a second stylesheet supplied a shorter offset. */
+.react-tel-input.react-tel-input .selected-flag .arrow {
+  position: absolute;
+  top: 50%;
+  left: 2.375rem;
+  margin-top: -2px;
+  border-top-color: hsl(var(--muted-foreground));
+}
+.react-tel-input.react-tel-input .selected-flag .arrow.up {
+  border-bottom-color: hsl(var(--muted-foreground));
+}
+
+/* ── The country dropdown ─────────────────────────────────────────────────── */
+.react-tel-input.react-tel-input .country-list {
+  max-width: calc(100vw - 2rem);
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  color: hsl(var(--popover-foreground));
+  background-color: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+.react-tel-input.react-tel-input .country-list .country {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  /* 48px = 12px gutter + 25px flag + 11px breathing room. This is the pair
+     that keeps the flag off the country name. */
+  padding: 0.5rem 0.75rem 0.5rem 3rem;
+  border-radius: max(0px, calc(var(--radius) - 2px));
+}
+.react-tel-input.react-tel-input .country-list .flag {
+  position: absolute;
+  top: 50%;
+  left: 0.75rem;
+  margin: -10px 0 0;
+}
+.react-tel-input.react-tel-input .country-list .country-name {
+  margin-right: 0;
+}
+.react-tel-input.react-tel-input .country-list .country .dial-code {
+  color: hsl(var(--muted-foreground));
+}
+.react-tel-input.react-tel-input .country-list .country:hover,
+.react-tel-input.react-tel-input .country-list .country.highlight {
+  color: hsl(var(--accent-foreground));
+  background-color: hsl(var(--accent));
+}
+.react-tel-input.react-tel-input .country-list .divider {
+  margin: 0.25rem 0;
+  padding: 0;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.react-tel-input.react-tel-input .country-list .search {
+  display: flex;
+  padding: 0.25rem 0.25rem 0.5rem;
+  background-color: hsl(var(--popover));
+}
+.react-tel-input.react-tel-input .country-list .search-box {
+  width: 100%;
+  height: var(--ui-control-h);
+  margin: 0;
+  padding: 0 0.75rem;
+  color: hsl(var(--foreground));
+  background-color: transparent;
+  border: 1px solid hsl(var(--input));
+  border-radius: max(0px, calc(var(--radius) - 2px));
+  line-height: normal;
+}
+.react-tel-input.react-tel-input .country-list .search-box:focus {
+  outline: none;
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 1px hsl(var(--ring));
+}
+.react-tel-input.react-tel-input .country-list .no-entries-message {
+  padding: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  opacity: 1;
+}
+
+/* react-phone-input-2 inside a DARK catalogue. The library ships its own
+   stylesheet hardcoding background:#fff on the input, the flag dropdown and the
+   country list, so the phone field rendered as a bright white slab in an
+   otherwise dark lead/enroll form. We cannot change the package's CSS, so
+   override it — scoped to the catalogue wrapper so every other consumer of the
+   phone input (registration, sub-org, product pages) keeps the library look. */
+[data-catalogue-theme].dark .react-tel-input .form-control,
+.dark [data-catalogue-theme] .react-tel-input .form-control {
+  background-color: hsl(var(--catalogue-bg-subtle));
+  color: hsl(var(--catalogue-text-primary));
+  border-color: hsl(var(--catalogue-border));
+}
+[data-catalogue-theme].dark .react-tel-input .form-control::placeholder,
+.dark [data-catalogue-theme] .react-tel-input .form-control::placeholder {
+  color: hsl(var(--catalogue-text-muted));
+}
+[data-catalogue-theme].dark .react-tel-input .flag-dropdown,
+.dark [data-catalogue-theme] .react-tel-input .flag-dropdown,
+[data-catalogue-theme].dark .react-tel-input .selected-flag:hover,
+.dark [data-catalogue-theme] .react-tel-input .selected-flag:hover,
+[data-catalogue-theme].dark .react-tel-input .selected-flag.open,
+.dark [data-catalogue-theme] .react-tel-input .selected-flag.open {
+  background-color: hsl(var(--catalogue-bg-muted));
+  border-color: hsl(var(--catalogue-border));
+}
+/* Country dropdown: list surface, rows, hover/selected and the search box. */
+[data-catalogue-theme].dark .react-tel-input .country-list,
+.dark [data-catalogue-theme] .react-tel-input .country-list {
+  background-color: hsl(var(--catalogue-bg-elevated));
+  color: hsl(var(--catalogue-text-primary));
+}
+[data-catalogue-theme].dark .react-tel-input .country-list .country .dial-code,
+.dark [data-catalogue-theme] .react-tel-input .country-list .country .dial-code {
+  color: hsl(var(--catalogue-text-muted));
+}
+[data-catalogue-theme].dark .react-tel-input .country-list .country:hover,
+.dark [data-catalogue-theme] .react-tel-input .country-list .country:hover,
+[data-catalogue-theme].dark .react-tel-input .country-list .country.highlight,
+.dark [data-catalogue-theme] .react-tel-input .country-list .country.highlight {
+  background-color: hsl(var(--catalogue-interactive-hover));
+}
+[data-catalogue-theme].dark .react-tel-input .country-list .search,
+.dark [data-catalogue-theme] .react-tel-input .country-list .search {
+  background-color: hsl(var(--catalogue-bg-elevated));
+}
+[data-catalogue-theme].dark .react-tel-input .country-list .search-box,
+.dark [data-catalogue-theme] .react-tel-input .country-list .search-box {
+  background-color: hsl(var(--catalogue-bg-subtle));
+  color: hsl(var(--catalogue-text-primary));
+  border-color: hsl(var(--catalogue-border));
+}
+
+/* Card-style each column in a document "Columns Layout" block so columns read as
+   distinct regions. Applied via CSS (not just the editor's serialized output) so
+   ALREADY-SAVED slides get it too — the stored column divs only set padding/text
+   inline, not background/border, so these add cleanly (padding needs !important to
+   beat the inline value). */
+[data-yoopta-type="columnsLayout"] > div {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px 16px !important;
+}
+
+/* Stack document "Columns Layout" blocks on narrow screens. The serialized block
+   uses an inline grid-template-columns: repeat(N, 1fr), which squeezes N columns
+   side-by-side on a phone and makes them unreadable — collapse to one column so
+   each is clear. */
+@media (max-width: 640px) {
+  [data-yoopta-type="columnsLayout"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+.richtext-content ul { list-style: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
+.richtext-content ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
+.richtext-content li { margin: 0.25rem 0; }
+.richtext-content li > ul,
+.richtext-content li > ol { margin: 0.25rem 0; }
+.richtext-content a { color: #2563eb; text-decoration: underline; }
+.richtext-content strong,
+.richtext-content b { font-weight: 700; }
+.richtext-content em,
+.richtext-content i { font-style: italic; }
+.richtext-content blockquote { border-left: 3px solid #d1d5db; padding-left: 1rem; margin: 0.75rem 0; color: #4b5563; }
+.richtext-content hr { border: 0; border-top: 1px solid #e5e7eb; margin: 1.5rem 0; }
+.richtext-content code { background: #f3f4f6; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; }
+.richtext-content img { max-width: 100%; height: auto; border-radius: 0.5rem; }
+
+/* Tables are the main casualty of the missing typography plugin — render them
+   with a visible grid and a shaded header, matching the admin editor. */
+.richtext-content table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95em; }
+.richtext-content th,
+.richtext-content td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; }
+.richtext-content th { background: #f9fafb; font-weight: 600; color: #111827; }
+.richtext-content thead th { border-bottom: 2px solid #e5e7eb; }
+.richtext-content table p { margin: 0; }
+
+/* Guided tutorial (driver.js) popover theming — keeps tours on-brand */
+.vacademy-tour-popover.driver-popover {
+  border-radius: 0.75rem;
+  padding: 1rem;
+  max-width: 320px;
+}
+.vacademy-tour-popover .driver-popover-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.vacademy-tour-popover .driver-popover-description {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.vacademy-tour-popover .driver-popover-progress-text {
+  font-size: 0.75rem;
+}
+.vacademy-tour-popover button.driver-popover-next-btn,
+.vacademy-tour-popover button.driver-popover-prev-btn {
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  text-shadow: none;
+  border: 1px solid transparent;
+}
+.vacademy-tour-popover button.driver-popover-next-btn {
+  background-color: hsl(var(--primary-500));
+  color: #fff;
+}
+.vacademy-tour-popover button.driver-popover-next-btn:hover {
+  background-color: hsl(var(--primary-400));
+}
+.vacademy-tour-popover button.driver-popover-prev-btn {
+  background-color: transparent;
+  border-color: hsl(var(--border));
+  color: inherit;
+}
+
+/* Safe-area padding for full-height overlays (the engagement task runner's
+   bottom sheet on phones): keeps its header clear of the notch / status bar and
+   its footer CTA clear of the home indicator. env() is 0 on devices without
+   insets, so these are no-ops on the web. Unlike html/body above, no -20px
+   offset: an overlay has no app header of its own to compensate for. */
+@layer utilities {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* Institute wallpaper (Student Display → Layout): a route's full-page canvas
+   would hide the wallpaper, so the page root goes see-through while it shows.
+   Cards and inputs keep their own surfaces. */
+[data-vx-wallpaper] > .bg-background {
+  background-color: transparent;
+}
+/* The Play skins pin the dashboard canvas with an !important rule in
+   @layer components; an important declaration in the same layer with higher
+   specificity is the one thing that outranks it. */
+@layer components {
+  [data-vx-wallpaper][data-vx-wallpaper] > .dashboard-container {
+    background-color: transparent !important;
+  }
+}

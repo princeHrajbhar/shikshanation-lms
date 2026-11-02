@@ -1,0 +1,36 @@
+package vacademy.io.admin_core_service.features.slide.dto;
+
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import lombok.Data;
+import vacademy.io.admin_core_service.features.slide.dto.HtmlVideoSlideDTO;
+
+@Data
+@JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
+public class SlideDTO {
+    private String id;
+    private String sourceId;
+    private String sourceType;
+    private String title;
+    private String imageFileId;
+    private String description;
+    private String status;
+    private Integer slideOrder;
+    private boolean isNewSlide;
+    private VideoSlideDTO videoSlide;
+    private DocumentSlideDTO documentSlide;
+    private QuestionSlideDTO questionSlide;
+    private AssignmentSlideDTO assignmentSlide;
+    private QuizSlideDTO quizSlide;
+    private HtmlVideoSlideDTO htmlVideoSlide;
+    private AudioSlideDTO audioSlide;
+    private ScormSlideDTO scormSlide;
+    private AssessmentSlideDTO assessmentSlide;
+    private Boolean isLoaded = false;
+    private String parentId;
+    // DB native query emits this under key 'drip_condition'; alias lets Jackson map it
+    // while the response still serializes as 'drip_condition_json' (SnakeCaseStrategy).
+    @JsonAlias("drip_condition")
+    private String dripConditionJson;
+}

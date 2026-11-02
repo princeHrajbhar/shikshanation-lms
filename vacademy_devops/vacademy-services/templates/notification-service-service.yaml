@@ -1,0 +1,15 @@
+{{- if .Values.services.notification_service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: default
+spec:
+  selector:
+    app: notification-service
+  ports:
+    - name: http
+      port: {{ .Values.services.notification_service.port }}
+      targetPort: {{ .Values.services.notification_service.port }}
+  type: NodePort
+{{- end }}

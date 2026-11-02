@@ -1,0 +1,77 @@
+package vacademy.io.admin_core_service.features.packages.dto;
+
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+
+import java.util.List;
+
+@JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
+public interface PackageDetailProjection {
+    String getId();
+
+    String getPackageName();
+
+    String getThumbnailFileId();
+
+    Boolean getIsCoursePublishedToCatalaouge();
+
+    String getCoursePreviewImageMediaId();
+
+    String getCourseBannerMediaId();
+
+    String getCourseMediaId();
+
+    String getWhyLearnHtml();
+
+    String getWhoShouldLearnHtml();
+
+    String getAboutTheCourseHtml();
+
+    String getCommaSeparetedTags();
+
+    Integer getCourseDepth();
+
+    String getCourseHtmlDescriptionHtml();
+
+    String getDripConditionJson();
+
+    Double getPercentageCompleted();
+
+    Double getRating();
+
+    String getPackageSessionId();
+
+    /**
+     * Optional human-readable batch/subgroup name.
+     * Mirrors {@code package_session.name}. May be null for parent sessions or older data.
+     */
+    String getPackageSessionName();
+
+    String getLevelId();
+
+    String getLevelName();
+
+    List<String> getFacultyUserIds();
+
+    /** Package creator user id (for instructor fallback when no faculty mapped). */
+    String getCreatedByUserId();
+
+    List<String> getLevelIds();
+
+    Long getReadTimeInMinutes();
+
+    String getPackageType();
+
+    Integer getValidityInDays();
+
+    String getSessionId();
+
+    String getSessionName();
+
+    /**
+     * Total enrolled students (ACTIVE + INACTIVE) for this package_session.
+     * Excludes DELETED and TERMINATED mappings. Null for queries that do
+     * not select enrollment counts.
+     */
+    Long getEnrolledStudentCount();
+}

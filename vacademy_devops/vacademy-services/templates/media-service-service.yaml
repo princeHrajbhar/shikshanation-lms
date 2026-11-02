@@ -1,0 +1,15 @@
+{{- if .Values.services.media_service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-service
+  namespace: default
+spec:
+  selector:
+    app: media-service
+  ports:
+    - name: http
+      port: {{ .Values.services.media_service.port }}
+      targetPort: {{ .Values.services.media_service.port }}
+  type: NodePort
+{{- end }}

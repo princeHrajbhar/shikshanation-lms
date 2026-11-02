@@ -1,0 +1,29 @@
+package vacademy.io.common.payment.dto;
+
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import lombok.Data;
+import vacademy.io.common.payment.enums.PaymentType;
+
+@Data
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+public class PaymentInitiationRequestDTO {
+    private Double amount;
+    private String currency;
+    private String description;
+    private boolean includePendingItems;
+    private boolean chargeAutomatically;
+    private String orderId;
+    private String instituteId;
+    private String email;
+    private String vendor;
+    private String vendorId;
+    private StripeRequestDTO stripeRequest;
+    private RazorpayRequestDTO razorpayRequest;
+    private PayPalRequestDTO payPalRequest;
+    private ManualPaymentDTO manualRequest;
+    private EwayRequestDTO ewayRequest;
+    private PhonePeRequestDTO phonePeRequest;
+    private CashfreeRequestDTO cashfreeRequest;
+    private PaymentType paymentType;
+}

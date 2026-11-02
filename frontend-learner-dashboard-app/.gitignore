@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Docker
+.env
+.env.local
+.env.production
+.env.development
+docker-compose.override.yml
+logs/
+
+# Mac App Store provisioning profile (per-Apple-account, never commit)
+electron/embedded.provisionprofile
+# Per-account signing material and store build output — never commit these.
+electron/embedded-zoe.provisionprofile
+electron/embedded-sn-dev.provisionprofile
+electron/dist-mas
+electron/dist-mas-zoe
+electron/dist-mas-dev
+electron/dist-unsigned
+electron/dist-store

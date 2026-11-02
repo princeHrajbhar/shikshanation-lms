@@ -1,0 +1,207 @@
+name: Deploy Admin to VET EKS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "admin_core_service/**"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # `environment: vet-education` still scopes the env-specific runtime
+    # secrets used by the kubectl-set-env block at the bottom (DB creds,
+    # OAuth client ids, etc.). SENTRY_AUTH_TOKEN / SENTRY_DSN no longer
+    # have env-level overrides — they fall through to the repo-level
+    # secrets, same as maven-publish-admin-core-service.yml.
+    environment: vet-education
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Authenticate GitHub Package Registry
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+        run: |
+          echo "${JAVA_TOKEN}" | docker login ghcr.io -u ${ACCESS_GITHUB_USERNAME} --password-stdin
+          mkdir -p ~/.m2
+          echo "<settings><servers><server><id>github</id><username>${ACCESS_GITHUB_USERNAME}</username><password>${JAVA_TOKEN}</password></server></servers></settings>" > ~/.m2/settings.xml
+
+      # admin_core_service depends on common_service-0.0.2-SNAPSHOT, which is
+      # published by maven-publish-common.yml. Both workflows fire on the same
+      # push to main, so if common publishing isn't finished yet, this build
+      # resolves the OLD jar and fails with "cannot find symbol" on any new
+      # API added to common_service. Build common_service locally first so
+      # the snapshot in ~/.m2 always reflects HEAD.
+      - name: Install common_service from source
+        working-directory: ./common_service
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: mvn -B install -DskipTests -Dsentry.authToken=$SENTRY_AUTH_TOKEN
+
+      - name: Build Project
+        working-directory: ./admin_core_service
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: mvn -s settings.xml clean install -DskipTests -Dsentry.authToken=$SENTRY_AUTH_TOKEN
+
+      - name: Configure AWS credentials for ECR Public
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "us-east-1"
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      # Images are tagged with the commit SHA, not just `latest`.
+      #
+      # `latest` is a mutable pointer: every ReplicaSet resolves it at pull time, so
+      # "restart a pod" silently means "run whatever is in ECR right now". On
+      # 2026-08-12 that took Vet Education down for ~3h — a broken build sat in ECR
+      # overnight, then EKS Auto Mode recycled the nodes for an AMI update, the pods
+      # re-pulled `latest`, and every replica crash-looped. Nothing had been
+      # deployed. `kubectl rollout undo` was useless because every ReplicaSet
+      # pointed at the same moving tag.
+      #
+      # `latest` is still pushed for humans and ad-hoc pulls, but the deployment is
+      # pinned to the immutable SHA tag below.
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        working-directory: ./admin_core_service
+        env:
+          ECR_REGISTRY: public.ecr.aws/h3e7x6t4
+          IMAGE_TAG: ${{ github.sha }}
+          REPOSITORY: admin-core-service/admin-core-service-repo
+          GITHUB_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG . --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} --build-arg ACCESS_GITHUB_USERNAME=${ACCESS_GITHUB_USERNAME} --build-arg JAVA_TOKEN=${JAVA_TOKEN} --build-arg SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN}
+          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:latest
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$REPOSITORY:latest
+          echo "Deployable image = $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG"
+
+      - name: Configure AWS credentials for EKS
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.VET_EKS_REGION }}
+
+      - name: Connect to EKS cluster
+        run: |
+          aws eks update-kubeconfig --name ${{ secrets.VET_EKS_CLUSTER_NAME }} --region ${{ secrets.VET_EKS_REGION }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set env deployment/admin-core-service \
+            environment=stage \
+            "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
+            "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
+            "APP_USERNAME=${{ secrets.APP_USERNAME }}" \
+            "APP_PASSWORD=${{ secrets.APP_PASSWORD }}" \
+            "CLOUD_FRONT_URL=${{ secrets.CLOUD_FRONT_URL }}" \
+            "ADMIN_CORE_SERVICE_DB_URL=${{ secrets.ADMIN_CORE_SERVICE_DB_URL }}" \
+            "ADMIN_CORE_SERVICE_READ_DB_URL=${{ secrets.ADMIN_CORE_SERVICE_READ_DB_URL }}" \
+            "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" \
+            "OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}" \
+            "SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}" \
+            "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" \
+            "CLOUDFLARE_API_TOKEN=${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            "CLOUDFLARE_ZONE_ID=${{ secrets.CLOUDFLARE_ZONE_ID }}" \
+            "CLOUDFLARE_ACCOUNT_ID=${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" \
+            "CLOUDFLARE_ADMIN_PAGES_PROJECT=${{ secrets.CLOUDFLARE_ADMIN_PAGES_PROJECT }}" \
+            "CLOUDFLARE_LEARNER_PAGES_PROJECT=${{ secrets.CLOUDFLARE_LEARNER_PAGES_PROJECT }}" \
+            "META_APP_ID=${{ secrets.META_APP_ID }}" \
+            "META_APP_SECRET=${{ secrets.META_APP_SECRET }}" \
+            "META_WEBHOOK_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}" \
+            "META_OAUTH_REDIRECT_URI=${{ secrets.META_OAUTH_REDIRECT_URI }}" \
+            "META_OAUTH_FRONTEND_CALLBACK_URL=${{ secrets.META_OAUTH_FRONTEND_CALLBACK_URL }}" \
+            "META_LOGIN_CONFIG_ID=${{ secrets.META_LOGIN_CONFIG_ID }}" \
+            "META_LOGIN_CONFIG_ENABLED=${{ secrets.META_LOGIN_CONFIG_ENABLED || 'false' }}" \
+            "OAUTH_TOKEN_ENCRYPTION_KEY=${{ secrets.OAUTH_TOKEN_ENCRYPTION_KEY }}" \
+            "YOUTUBE_OAUTH_CLIENT_ID=${{ secrets.ORG_YOUTUBE_OAUTH_CLIENT_ID }}" \
+            "YOUTUBE_OAUTH_CLIENT_SECRET=${{ secrets.ORG_YOUTUBE_OAUTH_CLIENT_SECRET }}" \
+            "YOUTUBE_OAUTH_REDIRECT_URI=${{ secrets.ORG_YOUTUBE_OAUTH_REDIRECT_URI }}" \
+            "ZOOM_APP_CLIENT_ID=${{ secrets.ZOOM_APP_CLIENT_ID }}" \
+            "ZOOM_APP_CLIENT_SECRET=${{ secrets.ZOOM_APP_CLIENT_SECRET }}" \
+            "ZOOM_OAUTH_REDIRECT_URI=${{ secrets.ZOOM_OAUTH_REDIRECT_URI }}" \
+            "ZOOM_OAUTH_FRONTEND_CALLBACK_URL=${{ secrets.ZOOM_OAUTH_FRONTEND_CALLBACK_URL }}" \
+            "GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
+            "GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}" \
+            "GOOGLE_OAUTH_REDIRECT_URI=${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}" \
+            "GOOGLE_OAUTH_FRONTEND_CALLBACK_URL=${{ secrets.GOOGLE_OAUTH_FRONTEND_CALLBACK_URL }}" \
+            "GOOGLE_EVENTS_PUBSUB_TOPIC=${{ secrets.GOOGLE_EVENTS_PUBSUB_TOPIC }}" \
+            "GOOGLE_EVENTS_PUSH_TOKEN=${{ secrets.GOOGLE_EVENTS_PUSH_TOKEN }}" \
+            "TELEPHONY_AIRTEL_S3_ENABLED=false" \
+            "TELEPHONY_AIRTEL_S3_REGION=us-east-1" \
+            "TELEPHONY_AIRTEL_S3_BUCKET=vacademy-airtel-ccr" \
+            "TELEPHONY_AIRTEL_S3_ACCESS_KEY=${{ secrets.TELEPHONY_AIRTEL_S3_ACCESS_KEY }}" \
+            "TELEPHONY_AIRTEL_S3_SECRET_KEY=${{ secrets.TELEPHONY_AIRTEL_S3_SECRET_KEY }}" \
+            "CASHFREE_SECUREID_CLIENT_ID=${{ secrets.CASHFREE_SECUREID_CLIENT_ID }}" \
+            "CASHFREE_SECUREID_CLIENT_SECRET=${{ secrets.CASHFREE_SECUREID_CLIENT_SECRET }}" \
+            "CASHFREE_SECUREID_BASE_URL=${{ secrets.CASHFREE_SECUREID_BASE_URL || 'https://api.cashfree.com/verification' }}"
+
+      # Replaces the old blind `kubectl rollout restart`.
+      #
+      # `set image` with the SHA tag changes the pod spec, which is what actually
+      # triggers the rollout — and it records a real, distinct image per revision,
+      # so `rollout undo` has something meaningful to go back to. The old restart
+      # only forced a re-pull of the mutable `latest`; every revision was identical
+      # and rollback was impossible.
+      - name: Deploy image and wait for it to become healthy
+        env:
+          ECR_REGISTRY: public.ecr.aws/h3e7x6t4
+          REPOSITORY: admin-core-service/admin-core-service-repo
+          IMAGE_TAG: ${{ github.sha }}
+          DEPLOYMENT_NAME: admin-core-service
+          NAMESPACE: default
+        run: |
+          kubectl set image deployment/$DEPLOYMENT_NAME \
+            $DEPLOYMENT_NAME=$ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            --namespace $NAMESPACE
+
+          # The step that was missing. Without this the workflow reported success
+          # even when every pod crash-looped — which is exactly how the broken
+          # V444 build shipped green on 2026-08-12 and sat undetected. Timeout is
+          # generous: admin-core has a 180s startup probe delay and rolls one pod
+          # at a time under maxSurge:1/maxUnavailable:0.
+          kubectl rollout status deployment/$DEPLOYMENT_NAME \
+            --namespace $NAMESPACE --timeout=10m
+
+      # Only reachable because images are immutable now — with `latest` every
+      # revision resolved to the same digest and undo was a no-op.
+      - name: Roll back if the new image failed to come up
+        if: failure()
+        env:
+          DEPLOYMENT_NAME: admin-core-service
+          NAMESPACE: default
+        run: |
+          echo "::error::Rollout failed — reverting to the previous working image."
+          kubectl rollout undo deployment/$DEPLOYMENT_NAME --namespace $NAMESPACE || true
+          kubectl rollout status deployment/$DEPLOYMENT_NAME \
+            --namespace $NAMESPACE --timeout=10m || true
+          echo "--- recent pod state ---"
+          kubectl get pods -l app=$DEPLOYMENT_NAME --namespace $NAMESPACE || true

@@ -1,0 +1,141 @@
+import { ColumnDef, Row } from '@tanstack/react-table';
+import { StudentTable } from '@/types/student-table-types';
+import { getFieldsForLocation, FieldForLocation } from '@/lib/custom-fields/utils';
+import { useClickHandlers } from './table-column-data';
+import { convertToUpperCase } from '@/utils/customFields';
+
+/**
+ * Component to render custom field cell value for enroll request
+ */
+const formatCustomFieldValue = (value: string, fieldType?: string): string => {
+    if (!value || value === '-') return '-';
+    switch (fieldType) {
+        case 'checkbox':
+            return value === 'true' ? 'Yes' : 'No';
+        case 'date':
+            try {
+                return new Date(value).toLocaleDateString();
+            } catch {
+                return value;
+            }
+        default:
+            return value;
+    }
+};
+
+const EnrollRequestCustomFieldCell = ({
+    row,
+    customFieldId,
+    fieldType,
+}: {
+    row: Row<StudentTable>;
+    customFieldId: string;
+    fieldType?: string;
+}) => {
+    const { handleClick, handleDoubleClick } = useClickHandlers();
+
+    const rawValue = row.original.custom_fields?.[customFieldId] ?? '-';
+    const displayValue = formatCustomFieldValue(String(rawValue), fieldType);
+
+    if (fieldType === 'file' && rawValue && rawValue !== '-') {
+        return (
+            <a
+                href={String(rawValue)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cursor-pointer text-primary-500 underline"
+                onClick={(e) => e.stopPropagation()}
+            >
+                View File
+            </a>
+        );
+    }
+
+    return (
+        <div
+            onClick={() => handleClick(customFieldId, row)}
+            onDoubleClick={(e) => handleDoubleClick(e, customFieldId, row)}
+            className="cursor-pointer"
+        >
+            {displayValue}
+        </div>
+    );
+};
+
+/**
+ * Generate dynamic column definitions for custom fields that are visible in Enroll Request
+ *
+ * This function:
+ * 1. Gets custom fields configured for "Enroll Request" from storage
+ * 2. Creates a column definition for each custom field
+ * 3. Maps customFieldId from student.custom_fields to the field name from settings
+ *
+ * @returns Array of column definitions for custom fields
+ *
+ * Custom Fields Revamp (2026-04): the standalone "Enroll Request List"
+ * visibility location was removed from Settings → Custom Fields. This view
+ * now reuses the "Learner's List" visibility configuration, since enroll
+ * requests are essentially pending learners and the same columns are
+ * almost always desired in both places.
+ */
+export const generateEnrollRequestCustomFieldColumns = (): ColumnDef<StudentTable>[] => {
+    try {
+        const customFields = getFieldsForLocation("Learner's List");
+
+        if (!customFields || customFields.length === 0) {
+            return [];
+        }
+
+        // Create a column definition for each custom field
+        return customFields
+            .filter((field) => field.id && field.name) // Only include fields with valid id and name
+            .map((field: FieldForLocation) => ({
+                accessorKey: field.id,
+                id: field.id,
+                size: 180,
+                minSize: 120,
+                maxSize: 300,
+                header: convertToUpperCase(field.name), // Use the field name from settings as the column header
+                cell: ({ row }: { row: Row<StudentTable> }) => (
+                    <EnrollRequestCustomFieldCell row={row} customFieldId={field.id} fieldType={field.type} />
+                ),
+                enableHiding: true,
+                // Add metadata to help identify custom field columns
+                meta: {
+                    isCustomField: true,
+                    customFieldId: field.id,
+                    customFieldType: field.type,
+                },
+            }));
+    } catch (error) {
+        console.error('Error generating enroll request custom field columns:', error);
+        return [];
+    }
+};
+
+/**
+ * Get column width classes for enroll request custom field columns
+ *
+ * @returns Record of column IDs to width classes
+ */
+export const getEnrollRequestCustomFieldColumnWidths = (): Record<string, string> => {
+    try {
+        const customFields = getFieldsForLocation("Learner's List");
+
+        if (!customFields || customFields.length === 0) {
+            return {};
+        }
+
+        const widths: Record<string, string> = {};
+
+        customFields.forEach((field) => {
+            // Use the custom field ID as the key
+            widths[field.id] = 'min-w-[180px]';
+        });
+
+        return widths;
+    } catch (error) {
+        console.error('Error generating enroll request custom field column widths:', error);
+        return {};
+    }
+};

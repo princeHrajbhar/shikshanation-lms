@@ -1,0 +1,189 @@
+package vacademy.io.admin_core_service.features.common.controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import vacademy.io.admin_core_service.features.common.dto.CustomFieldDTO;
+import vacademy.io.admin_core_service.features.common.dto.InstituteCustomFieldDTO;
+import vacademy.io.admin_core_service.features.common.dto.InstituteCustomFieldDeleteRequestDTO;
+import vacademy.io.admin_core_service.features.common.dto.request.EnrollRequestDto;
+import vacademy.io.admin_core_service.features.common.dto.request.InstituteCustomFieldMappingRequest;
+import vacademy.io.admin_core_service.features.common.manager.InstituteCustomFieldManager;
+import vacademy.io.admin_core_service.features.common.service.InstituteCustomFiledService;
+import vacademy.io.admin_core_service.features.institute.dto.settings.custom_field.CustomFieldDto;
+import vacademy.io.admin_core_service.features.institute.dto.settings.custom_field.CustomFieldSettingRequest;
+import vacademy.io.admin_core_service.features.institute_learner.dto.InstituteCustomFieldSetupDTO;
+import vacademy.io.common.auth.model.CustomUserDetails;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/admin-core-service/common/custom-fields")
+public class InstituteCustomFieldController {
+
+    @Autowired
+    private InstituteCustomFiledService instituteCustomFiledService;
+
+    @Autowired
+    private InstituteCustomFieldManager instituteCustomFieldManager;
+
+    /**
+     * Returns the institute's DEFAULT_CUSTOM_FIELD mappings — i.e. the catalog
+     * the admin manages from Settings → Custom Fields. The per-feature pickers
+     * (Enroll Invite, Audience, Live Session, Assessment) call this to know
+     * which fields to pre-select when an admin opens a brand-new create dialog.
+     */
+    @GetMapping
+    public ResponseEntity<List<InstituteCustomFieldDTO>> getInstituteCustomFields(
+            @RequestParam("instituteId") String instituteId) {
+        return ResponseEntity.ok(
+                instituteCustomFiledService.findActiveCustomFieldsWithNullTypeId(instituteId));
+    }
+
+    /**
+     * Returns every ACTIVE custom-field mapping for a single feature instance
+     * (e.g. one enroll invite, one live session, one audience). Used by the
+     * per-feature edit screens to pre-populate the picker with the fields
+     * that were saved last time.
+     *
+     * Pass {@code type} = ENROLL_INVITE / AUDIENCE_FORM / SESSION / ASSESSMENT
+     * and {@code typeId} = the feature instance UUID.
+     */
+    @GetMapping("/feature-fields")
+    public ResponseEntity<List<InstituteCustomFieldDTO>> getFeatureCustomFields(
+            @RequestParam("instituteId") String instituteId,
+            @RequestParam("type") String type,
+            @RequestParam("typeId") String typeId) {
+        return ResponseEntity.ok(
+                instituteCustomFiledService.findCustomFieldsAsJson(instituteId, type, typeId));
+    }
+
+    /**
+     * Persist the full set of custom fields the admin selected for one feature
+     * instance. Idempotent: insert / reactivate / soft-delete in one call. Used
+     * by every feature flow that owns its own per-instance picker — Enroll
+     * Invite, Audience, Live Session, Assessment, …
+     *
+     * <p>This endpoint exists so the assessment-service (and any other
+     * downstream flow) can sync custom fields without needing to import the
+     * admin_core_service service classes — the frontend calls it directly
+     * after the parent feature has been created. Body is the FULL list of
+     * fields the admin picked (defaults pre-selected from the catalog plus
+     * any ad-hoc fields added in the dialog).
+     */
+    @PostMapping("/feature-fields")
+    public ResponseEntity<String> syncFeatureCustomFields(
+            @RequestParam("instituteId") String instituteId,
+            @RequestParam("type") String type,
+            @RequestParam("typeId") String typeId,
+            @RequestBody List<InstituteCustomFieldDTO> fields) {
+        instituteCustomFiledService.syncFeatureCustomFields(instituteId, type, typeId, fields);
+        return ResponseEntity.ok("synced");
+    }
+
+    /**
+     * List every active mapping for one custom field across all feature
+     * instances (DEFAULT + ENROLL_INVITE + AUDIENCE_FORM + SESSION +
+     * ASSESSMENT). Used by the Settings → Custom Fields cascade-delete
+     * dialog so the admin can pick which mappings to soft-delete.
+     */
+    @GetMapping("/usages")
+    public ResponseEntity<List<vacademy.io.admin_core_service.features.common.dto.CustomFieldMappingUsageDTO>> getCustomFieldUsages(
+            @RequestParam("instituteId") String instituteId,
+            @RequestParam("customFieldId") String customFieldId) {
+        return ResponseEntity.ok(
+                instituteCustomFiledService.getCustomFieldUsages(instituteId, customFieldId));
+    }
+
+    /**
+     * Soft-delete a list of {@code institute_custom_fields} rows by id.
+     * Returns the number of rows actually flipped to DELETED. The master
+     * {@code custom_fields} row and any {@code custom_field_values} answers
+     * are <strong>not</strong> touched — re-adding the same field later via
+     * the unified picker will reactivate the mapping and bring the answers
+     * back.
+     */
+    @DeleteMapping("/mappings")
+    public ResponseEntity<String> softDeleteMappings(@RequestBody List<String> mappingIds) {
+        int updated = instituteCustomFiledService.softDeleteMappingsByIds(mappingIds);
+        return ResponseEntity.ok(updated + " mapping(s) marked DELETED");
+    }
+
+    @DeleteMapping("/delete-bulk")
+    public ResponseEntity<String> softDeleteInstituteCustomField(
+            @RequestBody List<InstituteCustomFieldDeleteRequestDTO> request, @RequestParam String instituteId) {
+        int updated = instituteCustomFiledService.softDeleteInstituteCustomFieldsBulk(
+                request, instituteId);
+        return ResponseEntity.ok(updated > 0 ? "success" : "no-op");
+    }
+
+    @GetMapping("/setup")
+    public ResponseEntity<List<InstituteCustomFieldSetupDTO>> getInstituteCustomFieldsSetup(
+            @RequestParam("instituteId") String instituteId) {
+        return ResponseEntity.ok(
+                instituteCustomFiledService.findUniqueActiveCustomFieldsByInstituteId(instituteId));
+    }
+
+    /**
+     * Distinct values a custom field holds across an institute's learners —
+     * powers the Manage Students filter bar's searchable multi-select for
+     * free-text (non-DROPDOWN) custom fields, which have no fixed option list.
+     */
+    @GetMapping("/student-values")
+    public ResponseEntity<org.springframework.data.domain.Page<String>> getStudentCustomFieldValues(
+            @RequestParam("instituteId") String instituteId,
+            @RequestParam("customFieldId") String customFieldId,
+            @RequestParam(value = "search", required = false) String search,
+            @RequestParam(name = "pageNo", defaultValue = "0") int pageNo,
+            @RequestParam(name = "pageSize", defaultValue = "20") int pageSize) {
+        return ResponseEntity.ok(instituteCustomFiledService.getStudentCustomFieldValues(
+                instituteId, customFieldId, search, pageNo, pageSize));
+    }
+
+    @PostMapping("/create")
+    public ResponseEntity<String> createCustomFieldForInstitute(@RequestParam("user") CustomUserDetails userDetails,
+                                                                @RequestParam("instituteId") String instituteId,
+                                                                @RequestParam(value = "fieldId", required = false) String fieldId,
+                                                                @RequestBody CustomFieldDTO request){
+        return instituteCustomFieldManager.createCustomFieldForInstitute(userDetails,request, instituteId, fieldId);
+    }
+
+    @PostMapping("/map-custom-field")
+    public ResponseEntity<String> mapCustomField(@RequestParam("user") CustomUserDetails userDetails,
+                                                 @RequestParam("instituteId") String instituteId,
+                                                 @RequestBody InstituteCustomFieldMappingRequest request) {
+        return instituteCustomFieldManager.mapCustomFieldWithUsage(userDetails, instituteId, request);
+    }
+
+    @DeleteMapping("/delete-multiple-mapping")
+    public ResponseEntity<String> deleteMappings(@RequestParam("user") CustomUserDetails userDetails,
+                                                 @RequestParam("instituteId") String instituteId,
+                                                 @RequestBody List<String> request) {
+        return instituteCustomFieldManager.deleteMultipleMapping(userDetails, instituteId, request);
+    }
+
+    @DeleteMapping("/delete-Custom-field/multiple")
+    public ResponseEntity<String> deleteCustomField(@RequestParam("user") CustomUserDetails userDetails,
+                                                    @RequestParam("instituteId") String instituteId,
+                                                    @RequestParam("isPersist") String isPersist,
+                                                    @RequestParam("commaSeparatedFieldsIds") String commaSeparatedFieldsIds,
+                                                    @RequestBody CustomFieldSettingRequest request) {
+        return instituteCustomFieldManager.deleteMultipleCustomFields(userDetails, instituteId, request, commaSeparatedFieldsIds, isPersist);
+    }
+
+    @GetMapping("/get-custom-fields")
+    public ResponseEntity<List<InstituteCustomFieldDTO>> getCustomFieldsForType(@RequestParam("user") CustomUserDetails userDetails,
+                                                         @RequestParam("instituteId") String instituteId,
+                                                         @RequestParam("type")String type,
+                                                         @RequestParam("typeId") String typeId) {
+        return instituteCustomFieldManager.getCustomFieldsForType(userDetails, instituteId, type,typeId);
+    }
+
+    @PostMapping("/register-enroll-request")
+    public ResponseEntity<String> registerEnrollRequestInCustomFields(@RequestParam("user") CustomUserDetails userDetails,
+                                                                                             @RequestParam("instituteId") String instituteId,
+                                                                                             @RequestBody EnrollRequestDto request) {
+        return instituteCustomFieldManager.registerEnrollRequestInCustomFields(userDetails, instituteId, request);
+    }
+
+}

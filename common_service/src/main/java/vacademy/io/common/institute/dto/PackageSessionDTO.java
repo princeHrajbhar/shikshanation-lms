@@ -1,0 +1,69 @@
+package vacademy.io.common.institute.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import vacademy.io.common.institute.entity.session.PackageSession;
+
+import java.util.Date;
+
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+@JsonIgnoreProperties(ignoreUnknown = true)
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class PackageSessionDTO {
+    private String id;
+    private LevelDTO level; // Assuming you want to expose levelId as well
+    private SessionDTO session; // Assuming you want to expose sessionId as well
+    private Date startTime;
+    private String status;
+    private PackageDTO packageDTO;
+    private GroupDTO group;
+    private Double readTimeInMinutes;
+    private Boolean isOrgAssociated;
+    private Boolean isParent;
+    private String parentId;
+    private String name;
+    /**
+     * Progress this learner has made in THIS batch, 0-100. Only populated on
+     * user-scoped responses (course-init); null everywhere else, including the
+     * open/unauthenticated catalogue, which stays user-agnostic.
+     */
+    private Double percentageCompleted;
+
+    // Constructor from PackageSession entity
+    public PackageSessionDTO(PackageSession packageSession,Double readTimeInMinutes) {
+        this.id = packageSession.getId();
+        this.startTime = packageSession.getStartTime();
+        this.status = packageSession.getStatus();
+
+        if (packageSession.getGroup() != null) {
+            this.group = new GroupDTO(packageSession.getGroup());
+        }
+
+        if (packageSession.getLevel() != null) {
+            this.level = new LevelDTO(packageSession.getLevel());
+        }
+
+        if (packageSession.getPackageEntity() != null) {
+            this.packageDTO = new PackageDTO(packageSession.getPackageEntity());
+        }
+
+        if (packageSession.getSession() != null) {
+            this.session = new SessionDTO(packageSession.getSession());
+        }
+        if (packageSession.getIsOrgAssociated() != null) {
+            this.isOrgAssociated = packageSession.getIsOrgAssociated();
+        }
+        this.isParent = packageSession.getIsParent();
+        this.parentId = packageSession.getParentId();
+        this.name = packageSession.getName();
+        this.readTimeInMinutes = readTimeInMinutes;
+    }
+}

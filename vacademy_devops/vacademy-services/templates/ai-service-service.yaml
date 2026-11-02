@@ -1,0 +1,17 @@
+{{- if .Values.services.ai_service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  namespace: default
+spec:
+  selector:
+    app: ai-service
+  ports:
+    - name: http
+      port: {{ .Values.services.ai_service.port }}
+      targetPort: {{ .Values.services.ai_service.port }}
+  type: NodePort
+
+
+{{- end }}

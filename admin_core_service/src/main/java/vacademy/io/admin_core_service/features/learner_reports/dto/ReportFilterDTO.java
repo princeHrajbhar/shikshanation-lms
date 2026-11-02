@@ -1,0 +1,18 @@
+package vacademy.io.admin_core_service.features.learner_reports.dto;
+
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import lombok.Data;
+
+import java.sql.Date;
+
+@JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
+@Data
+public class ReportFilterDTO {
+    private Date startDate;
+    private Date endDate;
+    private String packageSessionId;
+    private String userId;
+    // Used for module-specific or chapter-wise reports
+    private String moduleId;
+}

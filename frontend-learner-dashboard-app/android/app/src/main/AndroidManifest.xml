@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Offline content downloads keep running while the app is backgrounded, via a
+         dataSync foreground service (see OfflineDownloadService). Without this the
+         WebView's JS timers are frozen on background and a partial download stalls
+         until the learner reopens the app. WAKE_LOCK keeps a long transfer alive
+         through doze. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Camera & mic for the in-app Zoom Meeting SDK (Client View) running inside
+         the Capacitor WebView. Capacitor 7's BridgeWebChromeClient maps the
+         WebView getUserMedia request to these runtime permissions (prompted on
+         first use). MODIFY_AUDIO_SETTINGS lets WebRTC route audio correctly. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- Android 11+ package visibility: lets AppLauncher.canOpenUrl detect the
+         Zoom app via its custom URL scheme (zoommtg://). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="zoommtg" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="zoomus" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/AppTheme">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+            <!-- Main App Launcher -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Deep Link Support -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="${DEEP_LINK_HOST}"
+                    android:pathPrefix="/assessment/examination"
+                />
+                <data
+                    android:scheme="https"
+                    android:host="${DEEP_LINK_HOST}"
+                    android:pathPrefix="/assessment/reports"
+                />
+                <data
+                    android:scheme="https"
+                    android:host="${DEEP_LINK_HOST}"
+                    android:pathPrefix="/login/oauth/learner"
+                />
+            </intent-filter>
+
+            <!-- Custom URL Scheme for OAuth callback (works without assetlinks.json) -->
+            <!-- Each flavor gets its own scheme via ${applicationId} -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+        <!-- Keeps offline downloads running (and visible) while the app is backgrounded. -->
+        <service
+            android:name="io.vacademy.student.app.offlinedownloads.OfflineDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+    </application>
+</manifest>

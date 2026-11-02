@@ -1,0 +1,178 @@
+/* ─── Entrance Animations (triggered by IntersectionObserver) ─────────── */
+
+@keyframes catalogue-fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes catalogue-fadeInUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes catalogue-fadeInDown {
+    from { opacity: 0; transform: translateY(-30px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes catalogue-fadeInLeft {
+    from { opacity: 0; transform: translateX(-30px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes catalogue-fadeInRight {
+    from { opacity: 0; transform: translateX(30px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes catalogue-scaleUp {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes catalogue-slideUp {
+    from { opacity: 0; transform: translateY(60px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Entrance keyframes for style.animation.entrance ────────────────────
+   The ComponentStyleWrapper emits `animation: catalogue-<type> …` where
+   <type> is the authored token: fade-up | fade-in | slide-left | slide-right
+   | zoom-in. Only the legacy camelCase names above existed, so every entrance
+   pointed at a NONEXISTENT keyframe. Plain sections survived (the invalid
+   animation simply never ran, and nothing else held them transparent), but
+   STAGGERED sections hide their items with a base `opacity: 0` rule that only
+   the animation's fill can lift — so any section with entrance+stagger
+   rendered as permanently invisible blank space. These are the names the
+   wrapper actually asks for. */
+
+@keyframes catalogue-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes catalogue-fade-up {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes catalogue-slide-left {
+    from { opacity: 0; transform: translateX(30px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes catalogue-slide-right {
+    from { opacity: 0; transform: translateX(-30px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes catalogue-zoom-in {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* ─── Hover Effects ──────────────────────────────────────────────────── */
+
+.catalogue-hover-lift {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.catalogue-hover-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+.catalogue-hover-glow {
+    transition: box-shadow 0.3s ease;
+}
+.catalogue-hover-glow:hover {
+    /* Primary-keyed glow so it themes with the active preset (was hardcoded blue). */
+    box-shadow: var(--catalogue-card-glow);
+}
+
+.catalogue-hover-scale {
+    transition: transform 0.3s ease;
+}
+.catalogue-hover-scale:hover {
+    transform: scale(1.02);
+}
+
+.catalogue-hover-brighten {
+    transition: filter 0.3s ease;
+}
+.catalogue-hover-brighten:hover {
+    filter: brightness(1.08);
+}
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────
+   Configured motion must respect the OS setting (WCAG 2.3.3). Entrance
+   animations are additionally short-circuited in JS (ComponentStyleWrapper)
+   because they're applied as inline styles. */
+@media (prefers-reduced-motion: reduce) {
+    .catalogue-hover-lift,
+    .catalogue-hover-lift:hover,
+    .catalogue-hover-scale,
+    .catalogue-hover-scale:hover {
+        transform: none;
+        transition: none;
+    }
+    .catalogue-hover-brighten,
+    .catalogue-hover-brighten:hover {
+        filter: none;
+        transition: none;
+    }
+}
+
+/* ─── Logo Cloud Marquee ─────────────────────────────────────────────── */
+
+@keyframes catalogue-marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+}
+
+.catalogue-marquee {
+    animation: catalogue-marquee 30s linear infinite;
+    width: max-content;
+}
+
+.catalogue-marquee:hover {
+    animation-play-state: paused;
+}
+
+/* Opt OUT of hover-pause. The marquee editor offers a "Pause on hover" toggle;
+   the rule above applied unconditionally, so turning it off did nothing. Needs
+   !important to beat the equal-specificity :hover rule above regardless of
+   source order. */
+.catalogue-marquee-nopause:hover {
+    animation-play-state: running !important;
+}
+
+/* Reduced-motion override for the marquee. MUST come after the base
+   .catalogue-marquee rule above — equal specificity means document order
+   decides the cascade, so placing it earlier makes it dead CSS. */
+@media (prefers-reduced-motion: reduce) {
+    .catalogue-marquee {
+        animation: none;
+        transform: none;
+    }
+}
+
+/* ─── Rich Text Block Typography ─────────────────────────────────────── */
+
+.catalogue-rich-text {
+    color: #374151;
+    line-height: 1.75;
+}
+.catalogue-rich-text h1 { font-size: 2.25rem; font-weight: 800; margin: 0 0 0.75rem; color: #111827; line-height: 1.2; }
+.catalogue-rich-text h2 { font-size: 1.5rem; font-weight: 700; margin: 1.5rem 0 0.5rem; color: #111827; line-height: 1.3; }
+.catalogue-rich-text h3 { font-size: 1.25rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: #111827; line-height: 1.4; }
+.catalogue-rich-text p { margin: 0 0 1rem; }
+.catalogue-rich-text a { color: hsl(var(--primary-500, 217 91% 60%)); text-decoration: underline; }
+.catalogue-rich-text a:hover { opacity: 0.8; }
+.catalogue-rich-text ul,
+.catalogue-rich-text ol { margin: 0 0 1rem; padding-left: 1.5rem; }
+.catalogue-rich-text li { margin-bottom: 0.25rem; }
+.catalogue-rich-text ul { list-style-type: disc; }
+.catalogue-rich-text ol { list-style-type: decimal; }
+.catalogue-rich-text strong { font-weight: 700; }
+.catalogue-rich-text em { font-style: italic; }
+.catalogue-rich-text blockquote { border-left: 4px solid #E5E7EB; padding-left: 1rem; margin: 1rem 0; color: #6B7280; font-style: italic; }

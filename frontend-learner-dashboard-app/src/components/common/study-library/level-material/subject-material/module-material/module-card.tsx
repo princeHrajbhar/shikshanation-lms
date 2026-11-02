@@ -1,0 +1,110 @@
+import { useSidebar } from "@/components/ui/sidebar";
+import { getPublicUrl } from "@/services/upload_file";
+import { ModulesWithChapters } from "@/stores/study-library/use-modules-with-chapters-store";
+import { useRouter } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { ModuleDefaultImage } from "@/assets/svgs";
+import { CompletionStatusComponent } from "@/components/common/completion-status-component";
+import { toTitleCase } from "@/lib/utils";
+import { getTerminologyPlural } from "@/components/common/layout-container/sidebar/utils";
+import { ContentTerms, SystemTerms } from "@/types/naming-settings";
+import { useTranslation } from "react-i18next";
+import { useShowContentDescriptions } from "@/hooks/use-content-descriptions";
+import { DownloadNodeButton } from "@/components/common/offline/download-node-button";
+
+export const ModuleCard = ({ module }: { module: ModulesWithChapters}) => {
+
+    const { t } = useTranslation("studyContent");
+    const router = useRouter();
+    const { open } = useSidebar();
+    const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
+    const showDescription = useShowContentDescriptions();
+    const description = showDescription ? module.module.description?.trim() : "";
+    const { sessionId } = router.state.location.search as { sessionId?: string };
+
+    const handleCardClick = (e: React.MouseEvent) => {
+        if (
+            e.target instanceof Element &&
+            (e.target.closest(".drag-handle-container") ||
+                e.target.closest('[role="menu"]') ||
+                e.target.closest('[role="dialog"]'))
+        ) {
+            return;
+        }
+
+        const currentPath = router.state.location.pathname;
+        const searchParams = router.state.location.search;
+        router.navigate({
+            to: `${currentPath}/chapters`,
+            search: {
+                subjectId: searchParams.subjectId,
+                moduleId: module.module.id,
+            },
+        });
+    };
+
+    useEffect(() => {
+        const fetchImageUrl = async () => {
+            if (module.module.thumbnail_id) {
+                try {
+                    const url = await getPublicUrl(module.module.thumbnail_id);
+                    setImageUrl(url);
+                } catch (error) {
+                    console.error("Failed to fetch image URL:", error);
+                }
+            }
+        };
+
+        fetchImageUrl();
+    }, [module.module.thumbnail_id]);
+
+
+    return (
+        <div onClick={handleCardClick} className="cursor-pointer w-full items-center flex justify-center h-reg-380">
+            <div
+                className={`flex w-reg-300 xs:w-reg-350 sm:w-full ${open ? "md-tablet:w-reg-280" : "md-tablet:w-reg-350"} h-full flex-col gap-4 rounded-lg border border-neutral-300 p-6`}
+            >
+                <div className="flex items-center justify-between text-title font-semibold">
+                    <div>{toTitleCase(module.module.module_name)}</div>
+                    <DownloadNodeButton nodeId={module.module.id} nodeType="MODULE" packageSessionId={sessionId} />
+                </div>
+
+                {imageUrl ? (
+                    <img
+                        src={imageUrl}
+                        alt={toTitleCase(module.module.module_name)}
+                        className="w-full rounded-lg object-contain h-[70%]" // design-lint-ignore: decorative positioning
+                    />
+                ) : (
+                    <div className="flex w-full items-center justify-center rounded-lg bg-neutral-100 h-[80%]"> {/* design-lint-ignore: decorative positioning */}
+                         <ModuleDefaultImage />
+                     </div>
+                )}
+
+                <div className="w-full flex justify-between">
+                    <div className="flex flex-col gap-2">
+                        <div className="flex gap-2 text-subtitle font-semibold">
+                            <div className="text-primary-500">{module.chapters.length}</div>
+                            <div>{getTerminologyPlural(ContentTerms.Chapters, SystemTerms.Chapters)}</div>
+                        </div>
+
+                        {description && (
+                            <div className="flex items-center justify-between">
+                                <div
+                                    className="line-clamp-2 break-words text-caption text-neutral-500"
+                                    title={description}
+                                >
+                                    {description}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <CompletionStatusComponent completionPercentage={module.percentage_completed} />
+                        <p className="text-neutral-500 text-body">{t("progress.percentCompleted", { percent: module.percentage_completed.toFixed(2) })}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}

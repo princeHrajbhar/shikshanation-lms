@@ -1,0 +1,286 @@
+{{- if .Values.standalone.enabled }}
+{{- if not .Values.standalone.domain }}
+  {{- fail "standalone.domain is required when standalone.enabled=true (used for admin.<domain> / app.<domain>). Set it in values.secret.yaml or via the installer." -}}
+{{- end }}
+{{- /* Standalone: two subdomains (admin.<domain> + app.<domain>), each serving
+       its SPA at root with the API path-prefixes routed on the same host so the
+       frontend is same-origin with the backend. Only enabled services get a path. */ -}}
+{{- $d := .Values.standalone.domain }}
+{{- $adminHost := .Values.standalone.adminHost | default (printf "admin.%s" $d) }}
+{{- $appHost := .Values.standalone.appHost | default (printf "app.%s" $d) }}
+{{- $svcPaths := list
+  (dict "path" "/auth-service" "svc" "auth-service" "key" "auth_service")
+  (dict "path" "/admin-core-service" "svc" "admin-core-service" "key" "admin_core_service")
+  (dict "path" "/assessment-service" "svc" "assessment-service" "key" "assessment_service")
+  (dict "path" "/community-service" "svc" "community-service" "key" "community_service")
+  (dict "path" "/media-service" "svc" "media-service" "key" "media_service")
+  (dict "path" "/notification-service" "svc" "notification-service" "key" "notification_service")
+  (dict "path" "/ai-service" "svc" "ai-service" "key" "ai_service")
+  (dict "path" "/voice-bot-service" "svc" "voice-bot-service" "key" "voice_bot_service") }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vacademy-standalone-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+    # Large uploads (SCORM zips etc.) — without this nginx 413s at the default
+    # 1m, and the bare 413 page has no CORS headers so browsers report it as a
+    # CORS failure. Services still enforce their own multipart limits.
+    nginx.ingress.kubernetes.io/proxy-body-size: "820m"
+    {{- if .Values.certManager.enabled }}
+    cert-manager.io/cluster-issuer: vacademy-letsencrypt
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ $adminHost }}
+        - {{ $appHost }}
+      secretName: vacademy-standalone-tls
+  rules:
+    - host: {{ $adminHost }}
+      http:
+        paths:
+{{- range $p := $svcPaths }}
+{{- if (index $.Values.services $p.key).enabled }}
+          - path: {{ $p.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $p.svc }}
+                port:
+                  number: {{ (index $.Values.services $p.key).port }}
+{{- end }}
+{{- end }}
+{{- if .Values.services.auth_service.enabled }}
+          - path: /login/oauth2
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: {{ .Values.services.auth_service.port }}
+{{- end }}
+{{- if .Values.services.ai_service.enabled }}
+          # OAuth discovery for the MCP server. RFC 9728/8414 put these documents
+          # at the ROOT of the host (the resource path is appended AFTER the
+          # well-known segment), so they cannot live under /ai-service. They must
+          # also precede the SPA's catch-all "/" below.
+          - path: /.well-known/oauth-protected-resource
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-service
+                port:
+                  number: {{ .Values.services.ai_service.port }}
+          - path: /.well-known/oauth-authorization-server
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-service
+                port:
+                  number: {{ .Values.services.ai_service.port }}
+{{- end }}
+{{- if .Values.frontends.enabled }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-frontend
+                port:
+                  number: 80
+{{- end }}
+    - host: {{ $appHost }}
+      http:
+        paths:
+{{- range $p := $svcPaths }}
+{{- if (index $.Values.services $p.key).enabled }}
+          - path: {{ $p.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $p.svc }}
+                port:
+                  number: {{ (index $.Values.services $p.key).port }}
+{{- end }}
+{{- end }}
+{{- if .Values.frontends.enabled }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: learner-frontend
+                port:
+                  number: 80
+{{- end }}
+{{- else }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vacademy-services-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+    # Large uploads (SCORM zips etc.) — without this nginx 413s at the default
+    # 1m, and the bare 413 page has no CORS headers so browsers report it as a
+    # CORS failure. Services still enforce their own multipart limits.
+    nginx.ingress.kubernetes.io/proxy-body-size: "820m"
+    cert-manager.io/cluster-issuer: vacademy-stage-letsencrypt-prod-cert-issuer
+    certmanager.k8s.io/acme-challenge-type: http01
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - backend-stage.vacademy.io
+        - u.vacademy.io
+        - u.aanandham.uk
+        - u.readonrent.com
+        - u.elevateeducation.in
+        - u.suchbliss.com
+      secretName: vacademy-tls-secret
+  rules:
+    - host: backend-stage.vacademy.io
+      http:
+        paths:
+          - path: /community-service
+            pathType: Prefix
+            backend:
+              service:
+                name: community-service
+                port:
+                  number: {{ .Values.services.community_service.port }}
+          - path: /media-service
+            pathType: Prefix
+            backend:
+              service:
+                name: media-service
+                port:
+                  number: {{ .Values.services.media_service.port }}
+          - path: /auth-service
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: {{ .Values.services.auth_service.port }}
+          - path: /admin-core-service
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-core-service
+                port:
+                  number: {{ .Values.services.admin_core_service.port }}
+          - path: /assessment-service
+            pathType: Prefix
+            backend:
+              service:
+                name: assessment-service
+                port:
+                  number: {{ .Values.services.assessment_service.port }}
+          - path: /notification-service
+            pathType: Prefix
+            backend:
+              service:
+                name: notification-service
+                port:
+                  number: {{ .Values.services.notification_service.port }}
+          - path: /ai-service
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-service
+                port:
+                  number: {{ .Values.services.ai_service.port }}
+          # OAuth discovery for the MCP server. RFC 9728/8414 put these
+          # documents at the ROOT of the host (the resource path is appended
+          # AFTER the well-known segment), so they cannot live under
+          # /ai-service. MCP clients fetch them before they hold any token.
+          - path: /.well-known/oauth-protected-resource
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-service
+                port:
+                  number: {{ .Values.services.ai_service.port }}
+          - path: /.well-known/oauth-authorization-server
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-service
+                port:
+                  number: {{ .Values.services.ai_service.port }}
+{{- if .Values.services.voice_bot_service.enabled }}
+          # Vacademy AI voice bot — Plivo fetches /answer and opens the <Stream>
+          # WebSocket on /ws here (wss rides the existing host TLS; the 1800s
+          # proxy timeouts above keep long calls alive).
+          - path: /voice-bot-service
+            pathType: Prefix
+            backend:
+              service:
+                name: voice-bot-service
+                port:
+                  number: {{ .Values.services.voice_bot_service.port }}
+{{- end }}
+          - path: /login/oauth2
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: {{ .Values.services.auth_service.port }}
+    - host: u.vacademy.io
+      http:
+        paths:
+          - path: /s
+            pathType: Prefix
+            backend:
+              service:
+                name: media-service
+                port:
+                  number: {{ .Values.services.media_service.port }}
+    - host: u.aanandham.uk
+      http:
+        paths:
+          - path: /s
+            pathType: Prefix
+            backend:
+              service:
+                name: media-service
+                port:
+                  number: {{ .Values.services.media_service.port }}
+    - host: u.readonrent.com
+      http:
+        paths:
+          - path: /s
+            pathType: Prefix
+            backend:
+              service:
+                name: media-service
+                port:
+                  number: {{ .Values.services.media_service.port }}
+    - host: u.elevateeducation.in
+      http:
+        paths:
+          - path: /s
+            pathType: Prefix
+            backend:
+              service:
+                name: media-service
+                port:
+                  number: {{ .Values.services.media_service.port }}
+    - host: u.suchbliss.com
+      http:
+        paths:
+          - path: /s
+            pathType: Prefix
+            backend:
+              service:
+                name: media-service
+                port:
+                  number: {{ .Values.services.media_service.port }}
+{{- end }}

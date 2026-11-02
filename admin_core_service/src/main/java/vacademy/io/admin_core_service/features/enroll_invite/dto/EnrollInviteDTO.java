@@ -1,0 +1,51 @@
+package vacademy.io.admin_core_service.features.enroll_invite.dto;
+
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import lombok.Data;
+import vacademy.io.admin_core_service.features.common.dto.InstituteCustomFieldDTO;
+
+import java.sql.Date;
+import java.util.List;
+
+@Data
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+public class EnrollInviteDTO {
+    private String id;
+    private String name;
+    private java.sql.Date startDate;
+    private Date endDate;
+    private String inviteCode;
+    private String status;
+    private String instituteId;
+    private String vendor;
+    private String vendorId;
+    private String currency;
+    private String tag;
+    private Integer learnerAccessDays;
+    private String webPageMetaDataJson;
+    private Boolean isBundled;
+    private List<InstituteCustomFieldDTO> instituteCustomFields;
+    private List<PackageSessionToPaymentOptionDTO> packageSessionToPaymentOptions;
+    private String settingJson;
+    private String shortUrl;
+    private String subOrgId;
+    private SubOrgInfoDTO subOrg;
+    private String gtmContainerId;
+
+    /**
+     * Server-computed availability of this invite link based on {@code status} + the
+     * {@code [startDate, endDate]} window: AVAILABLE / EXPIRED / NOT_STARTED / INACTIVE.
+     * The learner FE uses this to decide whether to render the enrollment form or the
+     * admin-authored "unavailable" message. See EnrollInviteAvailabilityUtil.
+     */
+    private String availabilityStatus;
+
+    @Data
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public static class SubOrgInfoDTO {
+        private String id;
+        private String name;
+        private String logoFileId;
+    }
+}

@@ -1,0 +1,193 @@
+name: Deploy Admin to LKE
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build"
+        required: true
+        default: main
+      image_tag:
+        description: "Image tag to push (use a UNIQUE tag for branch builds, e.g. the branch name, so you don't overwrite main's :latest)"
+        required: true
+        default: latest
+  push:
+    branches:
+      - main
+    paths:
+      - "admin_core_service/**"
+
+jobs:
+  build-and-deploy:
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Authenticate GitHub Package Registry
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+        run: |
+          echo "${JAVA_TOKEN}" | docker login ghcr.io -u ${ACCESS_GITHUB_USERNAME} --password-stdin
+          mkdir -p ~/.m2
+          echo "<settings><servers><server><id>github</id><username>${ACCESS_GITHUB_USERNAME}</username><password>${JAVA_TOKEN}</password></server></servers></settings>" > ~/.m2/settings.xml
+
+      # admin_core_service depends on common_service-0.0.2-SNAPSHOT, which is
+      # published by maven-publish-common.yml. Both workflows fire on the same
+      # push to main, so if common publishing isn't finished yet, this build
+      # resolves the OLD jar and fails with "cannot find symbol" on any new
+      # API added to common_service. Build common_service locally first so
+      # the snapshot in ~/.m2 always reflects HEAD.
+      - name: Install common_service from source
+        working-directory: ./common_service
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: mvn -B install -DskipTests -Dsentry.authToken=$SENTRY_AUTH_TOKEN
+
+      - name: Build Project
+        working-directory: ./admin_core_service
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: mvn -s settings.xml clean install -DskipTests -Dsentry.authToken=$SENTRY_AUTH_TOKEN
+
+      # To push to ECR you need to login through us-east-1
+      # https://github.com/aws-actions/amazon-ecr-login/issues/587
+      # https://github.com/aws-actions/amazon-ecr-login?tab=readme-ov-file#troubleshooting
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "us-east-1"
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        working-directory: ./admin_core_service
+        env:
+          ECR_REGISTRY: public.ecr.aws/e0x1f4p4
+          IMAGE_TAG: ${{ github.event.inputs.image_tag || 'latest' }}
+          GIT_SHA: ${{ github.sha }}
+          REPOSITORY: admin-core-service/admin-core-service-repo
+          GITHUB_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+        run: |
+          # Build once; tag BOTH :latest (human-friendly) and an immutable :<sha>.
+          # The deploy step rolls the :<sha> so the ECR-public CDN cannot serve a
+          # stale :latest and leave a MIXED FLEET (which happened 2026-07-02).
+          docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG . --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} --build-arg ACCESS_GITHUB_USERNAME=${ACCESS_GITHUB_USERNAME} --build-arg JAVA_TOKEN=${JAVA_TOKEN} --build-arg SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN}
+          docker tag $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$REPOSITORY:$GIT_SHA
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$REPOSITORY:$GIT_SHA
+          echo "Docker Image Link = $ECR_REGISTRY/$REPOSITORY:$GIT_SHA"
+
+      # KUBECONFIG is sourced from the Hetzner k3s prod cluster (see /etc/rancher/k3s/k3s.yaml on the control-plane node)
+
+      # TODO: This kubeconfig is global kubeconfig with access to whole cluster
+      # In production refrain from using this and use k8s service account with limited access
+      # Each service account has permissions like IAM and each has its own kubeconfig
+      # replace global kubeconfig with service account's kubeconfig
+      # https://nicwortel.nl/blog/2022/continuous-deployment-to-kubernetes-with-github-actions
+      - name: Connect to Hetzner k3s kubernetes cluster
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        id: connect-to-k8s-cluster
+        uses: Azure/k8s-set-context@v4.0.0
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.VACADEMY_PROD_KUBECONFIG}}
+
+      - name: Deploy to Kubernetes
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          kubectl set env deployment/admin-core-service \
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            DB_USERNAME=${{ secrets.DB_USERNAME }} \
+            APP_USERNAME=${{ secrets.APP_USERNAME }} \
+            APP_PASSWORD=${{ secrets.APP_PASSWORD }} \
+            CLOUD_FRONT_URL=${{ secrets.CLOUD_FRONT_URL }} \
+            ADMIN_CORE_SERVICE_DB_URL=jdbc:postgresql://pgbouncer:6432/admin_core_service \
+            ADMIN_CORE_SERVICE_READ_DB_URL=jdbc:postgresql://pgbouncer:6432/admin_core_service_read \
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
+            OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }} \
+            ISOQUANT_API_KEY=${{ secrets.ISOQUANT_API_KEY }} \
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }} \
+            SENTRY_DSN=${{ secrets.SENTRY_DSN }} \
+            CLOUDFLARE_API_TOKEN=${{ secrets.CLOUDFLARE_API_TOKEN }} \
+            CLOUDFLARE_ZONE_ID=${{ secrets.CLOUDFLARE_ZONE_ID }} \
+            CLOUDFLARE_ACCOUNT_ID=${{ secrets.CLOUDFLARE_ACCOUNT_ID }} \
+            CLOUDFLARE_ADMIN_PAGES_PROJECT=${{ secrets.CLOUDFLARE_ADMIN_PAGES_PROJECT }} \
+            CLOUDFLARE_LEARNER_PAGES_PROJECT=${{ secrets.CLOUDFLARE_LEARNER_PAGES_PROJECT }} \
+            BBB_CALLBACK_BASE_URL=${{ secrets.BBB_CALLBACK_BASE_URL }} \
+            META_APP_ID=${{ secrets.META_APP_ID }} \
+            META_APP_SECRET=${{ secrets.META_APP_SECRET }} \
+            META_WEBHOOK_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }} \
+            META_OAUTH_REDIRECT_URI=${{ secrets.META_OAUTH_REDIRECT_URI }} \
+            META_OAUTH_FRONTEND_CALLBACK_URL=${{ secrets.META_OAUTH_FRONTEND_CALLBACK_URL }} \
+            META_LOGIN_CONFIG_ID=${{ secrets.META_LOGIN_CONFIG_ID || '1603313378040846' }} \
+            META_LOGIN_CONFIG_ENABLED=${{ secrets.META_LOGIN_CONFIG_ENABLED || 'false' }} \
+            OAUTH_TOKEN_ENCRYPTION_KEY=${{ secrets.OAUTH_TOKEN_ENCRYPTION_KEY }} \
+            AI_SERVICE_INTERNAL_TOKEN=${{ secrets.INTERNAL_SERVICE_TOKEN }} \
+            INTERNAL_SERVICE_TOKEN=${{ secrets.INTERNAL_SERVICE_TOKEN }} \
+            YOUTUBE_OAUTH_CLIENT_ID=${{ secrets.ORG_YOUTUBE_OAUTH_CLIENT_ID }} \
+            YOUTUBE_OAUTH_CLIENT_SECRET=${{ secrets.ORG_YOUTUBE_OAUTH_CLIENT_SECRET }} \
+            YOUTUBE_OAUTH_REDIRECT_URI=${{ secrets.ORG_YOUTUBE_OAUTH_REDIRECT_URI }} \
+            ZOOM_APP_CLIENT_ID=${{ secrets.ZOOM_APP_CLIENT_ID }} \
+            ZOOM_APP_CLIENT_SECRET=${{ secrets.ZOOM_APP_CLIENT_SECRET }} \
+            ZOOM_OAUTH_REDIRECT_URI=${{ secrets.ZOOM_OAUTH_REDIRECT_URI }} \
+            ZOOM_OAUTH_FRONTEND_CALLBACK_URL=${{ secrets.ZOOM_OAUTH_FRONTEND_CALLBACK_URL }} \
+            GOOGLE_OAUTH_CLIENT_ID=${{ secrets.GOOGLE_OAUTH_CLIENT_ID }} \
+            GOOGLE_OAUTH_CLIENT_SECRET=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }} \
+            GOOGLE_OAUTH_REDIRECT_URI=${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }} \
+            GOOGLE_OAUTH_FRONTEND_CALLBACK_URL=${{ secrets.GOOGLE_OAUTH_FRONTEND_CALLBACK_URL }} \
+            GOOGLE_EVENTS_PUBSUB_TOPIC=${{ secrets.GOOGLE_EVENTS_PUBSUB_TOPIC }} \
+            GOOGLE_EVENTS_PUSH_TOKEN=${{ secrets.GOOGLE_EVENTS_PUSH_TOKEN }} \
+            TELEPHONY_AIRTEL_S3_ENABLED=true \
+            TELEPHONY_AIRTEL_S3_REGION=us-east-1 \
+            TELEPHONY_AIRTEL_S3_BUCKET=vacademy-airtel-ccr \
+            TELEPHONY_AIRTEL_S3_ACCESS_KEY=${{ secrets.TELEPHONY_AIRTEL_S3_ACCESS_KEY }} \
+            TELEPHONY_AIRTEL_S3_SECRET_KEY=${{ secrets.TELEPHONY_AIRTEL_S3_SECRET_KEY }} \
+            CASHFREE_SECUREID_CLIENT_ID=${{ secrets.CASHFREE_SECUREID_CLIENT_ID }} \
+            CASHFREE_SECUREID_CLIENT_SECRET=${{ secrets.CASHFREE_SECUREID_CLIENT_SECRET }} \
+            CASHFREE_SECUREID_BASE_URL=${{ secrets.CASHFREE_SECUREID_BASE_URL || 'https://api.cashfree.com/verification' }}
+
+      - name: Roll out the freshly-built image by its immutable :<sha> tag
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        id: restart-deployment
+        env:
+          DEPLOYMENT_NAME: admin-core-service
+          NAMESPACE: default
+          ECR_REGISTRY: public.ecr.aws/e0x1f4p4
+          REPOSITORY: admin-core-service/admin-core-service-repo
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          # set image to the exact :<sha> (not `rollout restart`, which re-pulls
+          # :latest and can land a stale CDN copy → mixed fleet). Every pod now
+          # runs the byte-identical build this workflow just pushed.
+          CONTAINER=$(kubectl get deployment "$DEPLOYMENT_NAME" --namespace "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].name}')
+          kubectl set image deployment/"$DEPLOYMENT_NAME" --namespace "$NAMESPACE" \
+            "$CONTAINER"=$ECR_REGISTRY/$REPOSITORY:$GIT_SHA
+          kubectl rollout status deployment "$DEPLOYMENT_NAME" --namespace "$NAMESPACE" --timeout=600s

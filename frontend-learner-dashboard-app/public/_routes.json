@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "include": [
+    "/*"
+  ],
+  "exclude": [
+    "/icons/*",
+    "/images/*",
+    "/svgs/*",
+    "/vendor/*",
+    "/pdfjs/*",
+    "/badge-library/*",
+    "/styles.css",
+    "/sw.js",
+    "/firebase-messaging-sw.js",
+    "/firebase-messaging-sw.seven_cs.js"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+    "compilerOptions": {
+        // No baseUrl: TypeScript 7 (the native compiler build:tsc runs) removed it,
+        // and `paths` below resolve relative to this file without it.
+        "paths": {
+            "@excalidraw/*": ["./src/components/common/excalidraw/packages/*"],
+            "@/*": ["./src/*"]
+        },
+        "target": "esnext",
+        "lib": ["dom", "dom.iterable", "esnext"],
+        "allowJs": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "strict": true,
+        "forceConsistentCasingInFileNames": true,
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "noEmit": true,
+        "jsx": "react-jsx",
+        "types": ["node", "vite/client", "vitest/globals", "@testing-library/jest-dom"],
+        "allowUnreachableCode": false,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
+        "noUncheckedIndexedAccess": true,
+        "strictNullChecks": true,
+        // Cache diagnostics between runs: an unchanged tree re-checks in ~5s
+        // instead of minutes (the precommit script typechecks twice). Without
+        // declaration emit tsc keys reuse on file content, so any edit still
+        // re-checks the affected graph; `declaration: true` would fix that but
+        // trips 39 TS4023 "cannot be named" errors in lazy route files.
+        // CI starts cold every time and is unaffected either way.
+        "incremental": true,
+        "tsBuildInfoFile": "./node_modules/.cache/tsc/tsconfig.tsbuildinfo"
+    },
+    "include": ["src"],
+    "exclude": ["node_modules"]
+}
+
+
+//"./src/components/common/excalidraw/**/*"

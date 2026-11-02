@@ -1,0 +1,145 @@
+name: Deploy Media to LKE
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build"
+        required: true
+        default: main
+      image_tag:
+        description: "Image tag to push (use a UNIQUE tag for branch builds, e.g. the branch name, so you don't overwrite main's :latest)"
+        required: true
+        default: latest
+  push:
+    branches:
+      - main
+    paths:
+      - "media_service/**"
+
+jobs:
+  build-and-deploy:
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Authenticate GitHub Package Registry
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+        run: |
+          echo "${JAVA_TOKEN}" | docker login ghcr.io -u ${ACCESS_GITHUB_USERNAME} --password-stdin
+          mkdir -p ~/.m2
+          echo "<settings><servers><server><id>github</id><username>${ACCESS_GITHUB_USERNAME}</username><password>${JAVA_TOKEN}</password></server></servers></settings>" > ~/.m2/settings.xml
+
+      - name: Build Project
+        working-directory: ./media_service
+        env:
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: mvn -s settings.xml clean install -DskipTests -Dsentry.authToken=$SENTRY_AUTH_TOKEN
+
+      # To push to ECR you need to login through us-east-1
+      # https://github.com/aws-actions/amazon-ecr-login/issues/587
+      # https://github.com/aws-actions/amazon-ecr-login?tab=readme-ov-file#troubleshooting
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "us-east-1"
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        working-directory: ./media_service
+        env:
+          ECR_REGISTRY: public.ecr.aws/e0x1f4p4
+          IMAGE_TAG: ${{ github.event.inputs.image_tag || 'latest' }}
+          REPOSITORY: media-service/media-service-repo
+          GITHUB_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          ACCESS_GITHUB_USERNAME: ${{ secrets.ACCESS_GITHUB_USERNAME }}
+          JAVA_TOKEN: ${{ secrets.JAVA_TOKEN }}
+          S3_AWS_ACCESS_KEY: ${{ secrets.S3_AWS_ACCESS_KEY }}
+          S3_AWS_ACCESS_SECRET: ${{ secrets.S3_AWS_ACCESS_SECRET }}
+          S3_AWS_REGION: ${{ secrets.S3_AWS_REGION }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+        run: |
+          docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG . --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} --build-arg ACCESS_GITHUB_USERNAME=${ACCESS_GITHUB_USERNAME} --build-arg JAVA_TOKEN=${JAVA_TOKEN} --build-arg SENTRY_AUTH_TOKEN=${SENTRY_AUTH_TOKEN}
+          docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+          echo "Docker Image Link = $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG"
+
+      # KUBECONFIG is sourced from the Hetzner k3s prod cluster (see /etc/rancher/k3s/k3s.yaml on the control-plane node)
+
+      # TODO: This kubeconfig is global kubeconfig with access to whole cluster
+      # In production refrain from using this and use k8s service account with limited access
+      # Each service account has permissions like IAM and each has its own kubeconfig
+      # replace global kubeconfig with service account's kubeconfig
+      # https://nicwortel.nl/blog/2022/continuous-deployment-to-kubernetes-with-github-actions
+      - name: Connect to Hetzner k3s kubernetes cluster
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        id: connect-to-k8s-cluster
+        uses: Azure/k8s-set-context@v4.0.0
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.VACADEMY_PROD_KUBECONFIG}}
+
+      - name: Deploy to Kubernetes
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          kubectl set env deployment/media-service \
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            DB_USERNAME=${{ secrets.DB_USERNAME }} \
+            APP_USERNAME=${{ secrets.APP_USERNAME }} \
+            APP_PASSWORD=${{ secrets.APP_PASSWORD }} \
+            CLOUD_FRONT_URL=${{ secrets.CLOUD_FRONT_URL }} \
+            CDN_PUBLIC_BASE_URL=${{ secrets.CDN_PUBLIC_BASE_URL }} \
+            CDN_PRIVATE_BASE_URL=${{ secrets.CDN_PRIVATE_BASE_URL }} \
+            CDN_PRIVATE_KEY_PAIR_ID=${{ secrets.CDN_PRIVATE_KEY_PAIR_ID }} \
+            CDN_PRIVATE_KEY_B64=${{ secrets.CDN_PRIVATE_KEY_B64 }} \
+            MEDIA_SERVICE_DB_URL=jdbc:postgresql://pgbouncer:6432/media_service \
+            MEDIA_SERVICE_READ_DB_URL=jdbc:postgresql://pgbouncer:6432/media_service_read \
+            S3_AWS_ACCESS_KEY=${{ secrets.S3_AWS_ACCESS_KEY }} \
+            S3_AWS_ACCESS_SECRET=${{ secrets.S3_AWS_ACCESS_SECRET }} \
+            S3_AWS_REGION=${{ secrets.S3_AWS_REGION }} \
+            AWS_BUCKET_NAME=${{ secrets.AWS_BUCKET_NAME }} \
+            AWS_S3_PUBLIC_BUCKET=${{ secrets.AWS_S3_PUBLIC_BUCKET }} \
+            OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }} \
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
+            YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }} \
+            UNSPLASH_ACCESS_KEY=${{ secrets.UNSPLASH_ACCESS_KEY }} \
+            DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }} \
+            SENTRY_DSN=${{ secrets.SENTRY_DSN }} \
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }} \
+            CLOUD_CONVERT_KEY=${{ secrets.CLOUD_CONVERT_KEY }}
+
+      - name: Restart deployment
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        id: restart-deployment
+        env:
+          DEPLOYMENT_NAME: media-service
+          NAMESPACE: default
+        run: |
+          kubectl rollout restart deployment $DEPLOYMENT_NAME --namespace $NAMESPACE

@@ -1,0 +1,157 @@
+# Compiled files
+/frontend-admin-dashboard/dist
+/frontend-admin-dashboard/dist-ssr
+/frontend-admin-dashboard/*.local
+
+# dependencies
+/frontend-admin-dashboard/node_modules
+/frontend-admin-dashboard/.pnp
+/frontend-admin-dashboard/.pnp.js
+
+# testing
+/frontend-admin-dashboard/coverage
+
+# next.js
+/frontend-admin-dashboard/.next/
+/frontend-admin-dashboard/out/
+
+# production
+/frontend-admin-dashboard/build
+
+# misc
+/frontend-admin-dashboard/.DS_Store
+/frontend-admin-dashboard/*.pem
+/frontend-admin-dashboard/android/.idea
+
+# debug
+/frontend-admin-dashboard/npm-debug.log*
+/frontend-admin-dashboard/yarn-debug.log*
+/frontend-admin-dashboard/yarn-error.log*
+
+# local env files
+/frontend-admin-dashboard/.env
+/frontend-admin-dashboard/.env.local
+/frontend-admin-dashboard/.env.development.local
+/frontend-admin-dashboard/.env.test.local
+/frontend-admin-dashboard/.env.production.local
+
+# vercel
+/frontend-admin-dashboard/.vercel
+/frontend-admin-dashboard/.capgo
+
+/frontend-admin-dashboard/*storybook.log
+
+
+# Logs
+/frontend-learner-dashboard/logs
+/frontend-learner-dashboard/*.log
+/frontend-learner-dashboard/npm-debug.log*
+/frontend-learner-dashboard/yarn-debug.log*
+/frontend-learner-dashboard/yarn-error.log*
+/frontend-learner-dashboard/pnpm-debug.log*
+/frontend-learner-dashboard/lerna-debug.log*
+
+# Dependencies and builds
+/frontend-learner-dashboard/node_modules
+/frontend-learner-dashboard/dist
+/frontend-learner-dashboard/dist-ssr
+/frontend-learner-dashboard/*.local
+
+# Editor directories and files
+/frontend-learner-dashboard/.vscode/*
+!/frontend-learner-dashboard/.vscode/extensions.json
+/frontend-learner-dashboard/.idea
+/frontend-learner-dashboard/.DS_Store
+/frontend-learner-dashboard/*.suo
+/frontend-learner-dashboard/*.ntvs*
+/frontend-learner-dashboard/*.njsproj
+/frontend-learner-dashboard/*.sln
+/frontend-learner-dashboard/*.sw?
+
+
+/engage-client/node_modules
+/engage-client/dist
+/engage-client/dist-ssr
+/engage-client/*.local
+
+# Editor directories and files
+/engage-client/.vscode/*
+!/engage-client/.vscode/extensions.json
+/engage-client/.idea
+/engage-client/.DS_Store
+/engage-client/*.suo
+/engage-client/*.ntvs*
+/engage-client/*.njsproj
+/engage-client/*.sln
+/engage-client/*.sw?
+
+/assessment_service/target
+/admin_core_service/target
+/auth_service/target
+/community_service/target
+/notification_service/target
+/media_service/target
+
+# VS Code launch configurations with sensitive environment variables
+.vscode/launch.json
+
+# Local Development
+.env
+!.env.example
+docker-compose.override.yml
+*.log
+.vscode/
+.idea/
+
+# Python bytecode caches — global, so a new package can never re-commit them.
+__pycache__/
+*.py[cod]
+
+# AI Service (Python)
+ai_service/.venv/
+ai_service/venv/
+ai_service/.pytest_cache/
+ai_service/.mypy_cache/
+ai_service/.ruff_cache/
+ai_service/.coverage
+ai_service/.coverage.*
+ai_service/.python-version
+ai_service/.env
+ai_service/.env.*
+!ai_service/env.stage.example
+
+ai_service/target/*
+ai_service/app/ai-video-gen-main/assets/*
+ai_service/app/ai-video-gen-main/.*
+
+common_service/target/*
+admin_core_service/target/*
+assessment_service/target/*
+auth_service/target/*
+community_service/target/*
+notification_service/target/*
+media_service/target/*
+
+# Helm secret value overlays — real DB hosts/creds, never commit
+vacademy_devops/**/values.secret.yaml
+vacademy_devops/**/values-*.secret.yaml
+
+# Per-developer Claude Code permissions — local-only, not for sharing
+.claude/settings.local.json
+
+# Hetzner migration: operator-filled values (Cloudflare/DB tokens) — never commit
+vacademy_devops/hetzner/topology.env
+
+# Hetzner migration: operator-filled prod values overlay (real secrets)
+vacademy_devops/hetzner/values-prod-hetzner.yaml
+
+# Local dev config per service (hardcoded secrets for terminal runs) — never commit
+**/src/main/resources/application-local.properties
+loadtest/answer-sheet.pdf
+
+# Replay output holds callers' words — never commit it.
+voice_bot_service/sim_replay.json
+
+# Local Windows dev environment (dev credentials, logs, super-admin id) — never commit
+local-run/
+ai_service/.venv-win/

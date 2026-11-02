@@ -1,0 +1,133 @@
+import groovy.json.JsonSlurper
+
+apply plugin: 'com.android.application'
+
+// --- White-label admin flavors (data-driven) --------------------------------
+// Every white-label admin app is one entry in mobile-flavors.json. We read it
+// here and generate a matching Android product flavor per entry, mirroring the
+// learner app's per-institute flavors. Adding an institute is a JSON edit + a
+// GoogleServiceConfigs/<key>/ folder — no changes to this file. The manifest key
+// is a kebab-case slug (also the GoogleServiceConfigs folder name); Gradle flavor
+// ids can't contain hyphens, so it's mapped to camelCase (vacademy-admin ->
+// vacademyAdmin). Keys starting with "_" (e.g. "_comment") are ignored.
+def flavorSpecs = new JsonSlurper().parse(file("mobile-flavors.json"))
+    .findAll { key, cfg -> !key.startsWith('_') }
+    .collect { key, cfg ->
+        def parts = (key.split('[-_]') as List)
+        [
+            key          : key,
+            flavorName   : parts.head() + parts.tail().collect { it.capitalize() }.join(),
+            applicationId: cfg.applicationId,
+            appName      : cfg.appName,
+            deepLinkHost : cfg.deepLinkHost,
+        ]
+    }
+
+// --- Release signing (upload key) -------------------------------------------
+// Reads android/keystore.properties (git-ignored: storeFile/storePassword/
+// keyAlias/keyPassword). Absent on machines without the secret → release falls
+// back to the debug signing config so the build never hard-fails.
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
+android {
+    namespace = "io.vacademy.admin.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        // applicationId is set per product flavor below (one per white-label app).
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 3
+        versionName "1.0.2"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig keystorePropsFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    // One product flavor per white-label admin app (generated from the manifest).
+    flavorDimensions "client"
+    productFlavors {
+        flavorSpecs.each { spec ->
+            create(spec.flavorName) {
+                dimension "client"
+                applicationId spec.applicationId
+                // app_name + title_activity_main are generated here per flavor, so
+                // they are NOT in src/main/res/values/strings.xml (a duplicate there
+                // would fail the resource merge).
+                resValue "string", "app_name", spec.appName
+                resValue "string", "title_activity_main", spec.appName
+                manifestPlaceholders.DEEP_LINK_HOST = spec.deepLinkHost
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+
+    // Firebase Cloud Messaging for push notifications (matches the learner app).
+    // The @capacitor-firebase/messaging plugin needs these native libs present.
+    implementation platform('com.google.firebase:firebase-bom:33.2.0')
+    implementation 'com.google.firebase:firebase-messaging'
+}
+
+apply from: 'capacitor.build.gradle'
+
+// --- Per-flavor Firebase config (data-driven) -------------------------------
+// Paste each app's real google-services.json (from the Firebase console) into
+//   android/app/GoogleServiceConfigs/<key>/google-services.json
+// At configure time we copy it into that flavor's source set
+//   android/app/src/<flavor>/google-services.json
+// so the google-services plugin resolves it per flavor automatically — the same
+// per-flavor model the learner app uses. The copied src/<flavor>/google-services.json
+// is git-ignored (generated); GoogleServiceConfigs/<key>/ is the source of truth.
+flavorSpecs.each { spec ->
+    def registrySrc = file("GoogleServiceConfigs/${spec.key}/google-services.json")
+    if (registrySrc.exists()) {
+        copy {
+            from registrySrc
+            into file("src/${spec.flavorName}")
+        }
+    } else {
+        logger.warn("No google-services.json for flavor '${spec.key}' at ${registrySrc} — " +
+            "push notifications will be disabled for that build.")
+    }
+}
+apply plugin: 'com.google.gms.google-services'

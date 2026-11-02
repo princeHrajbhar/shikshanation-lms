@@ -1,0 +1,395 @@
+import { useState } from 'react';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { Plus } from '@phosphor-icons/react';
+import { BatchConfig, LevelOption, SessionOption, PaymentType } from '../-types/bulk-create-types';
+import { toast } from 'sonner';
+import { currencyOptions } from '@/routes/settings/-constants/payments';
+import { getCurrencySymbol } from '@/routes/settings/-components/Payment/utils/utils';
+import { getTerminology, getTerminologyPlural } from '@/components/common/layout-container/sidebar/utils';
+import { ContentTerms, SystemTerms } from '@/routes/settings/-components/NamingSettings';
+
+interface BatchSelectorDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    levels: LevelOption[];
+    sessions: SessionOption[];
+    onAddLevel: (name: string) => Promise<LevelOption>;
+    onAddSession: (name: string) => Promise<SessionOption>;
+    onSelect: (batch: BatchConfig) => void;
+    existingBatches?: BatchConfig[];
+}
+
+const PAYMENT_TYPES: { value: PaymentType; label: string }[] = [
+    { value: 'FREE', label: 'Free' },
+    { value: 'ONE_TIME', label: 'One-Time Payment' },
+    { value: 'SUBSCRIPTION', label: 'Subscription' },
+    { value: 'DONATION', label: 'Donation' },
+];
+
+export function BatchSelectorDialog({
+    open,
+    onOpenChange,
+    levels,
+    sessions,
+    onAddLevel,
+    onAddSession,
+    onSelect,
+    existingBatches = [],
+}: BatchSelectorDialogProps) {
+    const [selectedLevel, setSelectedLevel] = useState<string>('');
+    const [selectedSession, setSelectedSession] = useState<string>('');
+    const [newLevelName, setNewLevelName] = useState('');
+    const [newSessionName, setNewSessionName] = useState('');
+    const [isCreatingLevel, setIsCreatingLevel] = useState(false);
+    const [isCreatingSession, setIsCreatingSession] = useState(false);
+
+    // Inventory config
+    const [maxSlots, setMaxSlots] = useState<string>('');
+
+    // Payment config - now at batch level
+    const [paymentType, setPaymentType] = useState<PaymentType>('FREE');
+    const [price, setPrice] = useState<string>('');
+    const [validityDays, setValidityDays] = useState<string>('');
+    const [isValidityApplicable, setIsValidityApplicable] = useState<boolean>(true);
+    const [currency, setCurrency] = useState<string>('INR');
+
+    const handleCreateLevel = async () => {
+        if (!newLevelName.trim()) {
+            toast.error(`Please enter a ${getTerminology(ContentTerms.Level, SystemTerms.Level).toLowerCase()} name`);
+            return;
+        }
+
+        setIsCreatingLevel(true);
+        try {
+            const newLevel = await onAddLevel(newLevelName.trim());
+            setSelectedLevel(newLevel.id);
+            setNewLevelName('');
+            toast.success(`${getTerminology(ContentTerms.Level, SystemTerms.Level)} "${newLevel.name}" created`);
+        } catch (error) {
+            toast.error(`Failed to create ${getTerminology(ContentTerms.Level, SystemTerms.Level).toLowerCase()}`);
+        } finally {
+            setIsCreatingLevel(false);
+        }
+    };
+
+    const handleCreateSession = async () => {
+        if (!newSessionName.trim()) {
+            toast.error(`Please enter a ${getTerminology(ContentTerms.Session, SystemTerms.Session).toLowerCase()} name`);
+            return;
+        }
+
+        setIsCreatingSession(true);
+        try {
+            const newSession = await onAddSession(newSessionName.trim());
+            setSelectedSession(newSession.id);
+            setNewSessionName('');
+            toast.success(`${getTerminology(ContentTerms.Session, SystemTerms.Session)} "${newSession.name}" created`);
+        } catch (error) {
+            toast.error(`Failed to create ${getTerminology(ContentTerms.Session, SystemTerms.Session).toLowerCase()}`);
+        } finally {
+            setIsCreatingSession(false);
+        }
+    };
+
+    const handleConfirm = () => {
+        const levelOption = levels.find((l) => l.id === selectedLevel);
+        const sessionOption = sessions.find((s) => s.id === selectedSession);
+
+        // Validate price for paid types
+        if ((paymentType === 'ONE_TIME' || paymentType === 'SUBSCRIPTION') && !price) {
+            toast.error(`Please enter a price for paid ${getTerminologyPlural(ContentTerms.Course, SystemTerms.Course).toLowerCase()}`);
+            return;
+        }
+
+        const batch: BatchConfig = {
+            level_id: selectedLevel || null,
+            session_id: selectedSession || null,
+            level_name: levelOption?.name || 'DEFAULT',
+            session_name: sessionOption?.name || 'DEFAULT',
+            inventory_config: maxSlots
+                ? {
+                      max_slots: Number(maxSlots),
+                      available_slots: Number(maxSlots),
+                  }
+                : undefined,
+            payment_config: {
+                payment_type: paymentType,
+                price: price ? Number(price) : undefined,
+                is_validity_applicable: isValidityApplicable,
+                validity_in_days:
+                    paymentType === 'ONE_TIME' && !isValidityApplicable
+                        ? null
+                        : validityDays
+                          ? Number(validityDays)
+                          : undefined,
+                currency: currency,
+            },
+        };
+
+        const isDuplicate = existingBatches.some(
+            (b) => b.level_id === batch.level_id && b.session_id === batch.session_id
+        );
+
+        if (isDuplicate) {
+            toast.error('This batch combination already exists');
+            return;
+        }
+
+        onSelect(batch);
+        resetForm();
+    };
+
+    const resetForm = () => {
+        setSelectedLevel('');
+        setSelectedSession('');
+        setNewLevelName('');
+        setNewSessionName('');
+        setMaxSlots('');
+        setPaymentType('FREE');
+        setPrice('');
+        setValidityDays('');
+        setIsValidityApplicable(true);
+        setCurrency('INR');
+    };
+
+    const showPriceField = paymentType === 'ONE_TIME' || paymentType === 'SUBSCRIPTION';
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle>Add {getTerminology(ContentTerms.Batch, SystemTerms.Batch)}</DialogTitle>
+                    <DialogDescription>
+                        Configure {getTerminology(ContentTerms.Level, SystemTerms.Level).toLowerCase()}, {getTerminology(ContentTerms.Session, SystemTerms.Session).toLowerCase()}, payment, and inventory for this {getTerminology(ContentTerms.Batch, SystemTerms.Batch).toLowerCase()}.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 py-4">
+                    {/* Level Selection */}
+                    <div className="space-y-2">
+                        <Label className="text-sm">{getTerminology(ContentTerms.Level, SystemTerms.Level)}</Label>
+                        <Tabs defaultValue="existing" className="w-full">
+                            <TabsList className="grid w-full grid-cols-2">
+                                <TabsTrigger value="existing" className="text-xs">
+                                    Select Existing
+                                </TabsTrigger>
+                                <TabsTrigger value="new" className="text-xs">
+                                    Create New
+                                </TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="existing" className="mt-2">
+                                <Select value={selectedLevel} onValueChange={setSelectedLevel}>
+                                    <SelectTrigger className="h-9 text-sm">
+                                        <SelectValue placeholder={`Select ${getTerminology(ContentTerms.Level, SystemTerms.Level).toLowerCase()}`} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {levels.map((level) => (
+                                            <SelectItem key={level.id} value={level.id}>
+                                                {level.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </TabsContent>
+                            <TabsContent value="new" className="mt-2">
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder={`Enter new ${getTerminology(ContentTerms.Level, SystemTerms.Level).toLowerCase()} name`}
+                                        value={newLevelName}
+                                        onChange={(e) => setNewLevelName(e.target.value)}
+                                        className="h-9 text-sm"
+                                    />
+                                    <Button
+                                        size="sm"
+                                        onClick={handleCreateLevel}
+                                        disabled={isCreatingLevel}
+                                    >
+                                        <Plus className="size-4" />
+                                    </Button>
+                                </div>
+                            </TabsContent>
+                        </Tabs>
+                    </div>
+
+                    {/* Session Selection */}
+                    <div className="space-y-2">
+                        <Label className="text-sm">{getTerminology(ContentTerms.Session, SystemTerms.Session)}</Label>
+                        <Tabs defaultValue="existing" className="w-full">
+                            <TabsList className="grid w-full grid-cols-2">
+                                <TabsTrigger value="existing" className="text-xs">
+                                    Select Existing
+                                </TabsTrigger>
+                                <TabsTrigger value="new" className="text-xs">
+                                    Create New
+                                </TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="existing" className="mt-2">
+                                <Select value={selectedSession} onValueChange={setSelectedSession}>
+                                    <SelectTrigger className="h-9 text-sm">
+                                        <SelectValue placeholder={`Select ${getTerminology(ContentTerms.Session, SystemTerms.Session).toLowerCase()}`} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {sessions.map((session) => (
+                                            <SelectItem key={session.id} value={session.id}>
+                                                {session.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </TabsContent>
+                            <TabsContent value="new" className="mt-2">
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder={`Enter new ${getTerminology(ContentTerms.Session, SystemTerms.Session).toLowerCase()} name`}
+                                        value={newSessionName}
+                                        onChange={(e) => setNewSessionName(e.target.value)}
+                                        className="h-9 text-sm"
+                                    />
+                                    <Button
+                                        size="sm"
+                                        onClick={handleCreateSession}
+                                        disabled={isCreatingSession}
+                                    >
+                                        <Plus className="size-4" />
+                                    </Button>
+                                </div>
+                            </TabsContent>
+                        </Tabs>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="border-t border-neutral-200 pt-2">
+                        <p className="text-xs font-medium text-neutral-500">
+                            Payment & Inventory ({getTerminology(ContentTerms.Batch, SystemTerms.Batch)}-level)
+                        </p>
+                    </div>
+
+                    {/* Payment Type */}
+                    <div className="space-y-2">
+                        <Label className="text-sm">Payment Type</Label>
+                        <Select
+                            value={paymentType}
+                            onValueChange={(val) => setPaymentType(val as PaymentType)}
+                        >
+                            <SelectTrigger className="h-9 text-sm">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {PAYMENT_TYPES.map((type) => (
+                                    <SelectItem key={type.value} value={type.value}>
+                                        {type.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {/* Price - only show for paid types */}
+                    {showPriceField && (
+                        <>
+                            {/* Currency */}
+                            <div className="space-y-2">
+                                <Label className="text-sm">Currency</Label>
+                                <Select value={currency} onValueChange={setCurrency}>
+                                    <SelectTrigger className="h-9 text-sm">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {currencyOptions.map((opt) => (
+                                            <SelectItem key={opt.code} value={opt.code}>
+                                                {opt.symbol} - {opt.name} ({opt.code})
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <Label className="text-sm">
+                                        Price ({getCurrencySymbol(currency)}) *
+                                    </Label>
+                                    <Input
+                                        type="number"
+                                        placeholder="e.g., 499"
+                                        value={price}
+                                        onChange={(e) => setPrice(e.target.value)}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                                {(paymentType === 'SUBSCRIPTION' || isValidityApplicable) && (
+                                    <div className="space-y-2">
+                                        <Label className="text-sm">Validity (Days)</Label>
+                                        <Input
+                                            type="number"
+                                            placeholder="e.g., 365"
+                                            value={validityDays}
+                                            onChange={(e) => setValidityDays(e.target.value)}
+                                            className="h-9 text-sm"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Set Validity toggle (one-time only) */}
+                            {paymentType === 'ONE_TIME' && (
+                                <div className="flex items-center justify-between rounded-lg border p-3">
+                                    <div>
+                                        <Label className="text-sm font-medium">Set validity</Label>
+                                        <p className="text-xs text-neutral-500">
+                                            Turn off for one-time purchases that don&apos;t expire
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        checked={isValidityApplicable}
+                                        onCheckedChange={(checked) => {
+                                            setIsValidityApplicable(checked);
+                                            if (!checked) setValidityDays('');
+                                        }}
+                                    />
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {/* Max Slots */}
+                    <div className="space-y-2">
+                        <Label className="text-sm">Max Seats (optional)</Label>
+                        <Input
+                            type="number"
+                            placeholder="Leave empty for unlimited"
+                            value={maxSlots}
+                            onChange={(e) => setMaxSlots(e.target.value)}
+                            className="h-9 text-sm"
+                        />
+                    </div>
+                </div>
+
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                        Cancel
+                    </Button>
+                    <Button onClick={handleConfirm}>Add {getTerminology(ContentTerms.Batch, SystemTerms.Batch)}</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}

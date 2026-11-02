@@ -1,0 +1,172 @@
+import { DashboardLoader } from '@/components/core/dashboard-loader';
+import { MyButton } from '@/components/design-system/button';
+import {
+    AITaskIndividualListInterface,
+    PlanLectureDataInterface,
+} from '@/types/ai/generate-assessment/generate-complete-assessment';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { handleGetLecturePlan, handleRetryAITask } from '../-services/ai-center-service';
+
+import PlanLecturePreview from '../ai-tools/vsmart-lecture/-components/PlanLecturePreview';
+import { Dispatch, SetStateAction, useState } from 'react';
+import { toast } from 'sonner';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { AxiosError } from 'axios';
+import { Eye } from '@phosphor-icons/react';
+import { Trans, useTranslation } from 'react-i18next';
+
+const AIPlanLecturePreview = ({
+    task,
+    openPlanLecturePreview,
+    setOpenPlanLecturePreview,
+}: {
+    task: AITaskIndividualListInterface;
+    openPlanLecturePreview: boolean;
+    setOpenPlanLecturePreview: Dispatch<SetStateAction<boolean>>;
+}) => {
+    const { t } = useTranslation('aiCenterAIPlanLecturePreview');
+    const [noResponse, setNoResponse] = useState(false);
+    const queryClient = useQueryClient();
+    const [planLectureData, setPlanLectureData] = useState<PlanLectureDataInterface>({
+        heading: '',
+        mode: '',
+        duration: '',
+        language: '',
+        level: '',
+        timeWiseSplit: [],
+        assignment: {
+            topicCovered: [],
+            tasks: [],
+        },
+        summary: [],
+    });
+    const getChatListMutation = useMutation({
+        mutationFn: async ({ parentId }: { parentId: string }) => {
+            return handleGetLecturePlan(parentId);
+        },
+        onSuccess: (response) => {
+            if (!response) {
+                setTimeout(() => {
+                    setNoResponse(false);
+                }, 10000);
+                setNoResponse(true);
+                return;
+            }
+            setNoResponse(false);
+            setPlanLectureData(response);
+            setOpenPlanLecturePreview(true);
+        },
+        onError: (error: unknown) => {
+            console.log(error);
+        },
+    });
+
+    const handlViewChatList = (parentId: string) => {
+        getChatListMutation.mutate({
+            parentId,
+        });
+    };
+
+    const getRetryMutation = useMutation({
+        mutationFn: async ({ taskId }: { taskId: string }) => {
+            return handleRetryAITask(taskId);
+        },
+        onSuccess: (response) => {
+            setNoResponse(false);
+            setTimeout(() => {
+                queryClient.invalidateQueries({ queryKey: ['GET_INDIVIDUAL_AI_LIST_DATA'] });
+            }, 100);
+            if (!response) {
+                toast.success(t('noDataToast'));
+                return;
+            }
+            setPlanLectureData(response);
+        },
+        onError: (error: unknown) => {
+            setNoResponse(false);
+            if (error instanceof AxiosError) {
+                toast.error(error.response?.data.ex, {
+                    className: 'error-toast',
+                    duration: 2000,
+                });
+            } else {
+                // Handle non-Axios errors if necessary
+                console.error('Unexpected error:', error);
+            }
+        },
+    });
+
+    const handleRetryTask = (taskId: string) => {
+        getRetryMutation.mutate({
+            taskId,
+        });
+    };
+    return (
+        <>
+            <Dialog open={noResponse} onOpenChange={setNoResponse}>
+                <DialogContent className="p-0">
+                    <h1 className="rounded-t-lg bg-primary-50 p-2 text-primary-500">
+                        {t('failedDialog.title')}
+                    </h1>
+                    <h1 className="p-4">
+                        <Trans
+                            t={t}
+                            i18nKey="failedDialog.message"
+                            components={{
+                                retryLink: (
+                                    <MyButton
+                                        type="button"
+                                        scale="small"
+                                        buttonType="secondary"
+                                        className="!w-0 !min-w-8 border-none !p-0 text-sm !text-blue-600 shadow-none hover:bg-transparent hover:underline focus:bg-transparent focus:outline-none focus:ring-0 active:bg-transparent"
+                                        onClick={() => handleRetryTask(task.id)}
+                                    />
+                                ),
+                            }}
+                        />
+                    </h1>
+                </DialogContent>
+            </Dialog>
+            {task.status === 'FAILED' ? (
+                <MyButton
+                    type="button"
+                    scale="small"
+                    buttonType="secondary"
+                    className="border-none text-sm !text-blue-600 shadow-none hover:bg-transparent focus:bg-transparent focus:outline-none focus:ring-0 active:bg-transparent"
+                    onClick={() => handleRetryTask(task.id)}
+                >
+                    {getRetryMutation.status === 'pending' ? <DashboardLoader /> : t('retryButton')}
+                </MyButton>
+            ) : (
+                <MyButton
+                    type="button"
+                    scale="small"
+                    buttonType="primary"
+                    className="inline-flex items-center gap-1.5 rounded-lg !bg-primary-500 px-3 py-1.5 text-xs font-medium !text-white shadow-sm hover:!bg-primary-600"
+                    onClick={() => handlViewChatList(task.id)}
+                >
+                    {getChatListMutation.status === 'pending' ? (
+                        <>
+                            <div className="mr-1 size-3 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                            <span>{t('loading')}</span>
+                        </>
+                    ) : (
+                        <>
+                            <Eye size={14} weight="bold" />
+                            {t('viewPlanButton')}
+                        </>
+                    )}
+                </MyButton>
+            )}
+
+            {getChatListMutation.status === 'success' && (
+                <PlanLecturePreview
+                    openDialog={openPlanLecturePreview}
+                    planLectureData={planLectureData}
+                />
+            )}
+        </>
+    );
+};
+
+export default AIPlanLecturePreview;

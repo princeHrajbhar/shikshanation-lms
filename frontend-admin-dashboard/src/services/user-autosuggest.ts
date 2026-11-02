@@ -1,0 +1,158 @@
+import { GET_ELIGIBLE_ASSIGNEES, GET_USER_AUTOSUGGEST } from '@/constants/urls';
+import authenticatedAxiosInstance from '@/lib/auth/axiosInstance';
+import { getCurrentInstituteId } from '@/lib/auth/instituteUtils';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+
+// User DTO Interface based on API documentation
+export interface UserDTO {
+    id: string;
+    username: string;
+    email: string;
+    full_name: string;
+    mobile_number?: string;
+    roles?: string[];
+    // Add other fields as needed based on your actual API response
+}
+
+// Request parameters for autosuggest
+export interface UserAutosuggestParams {
+    instituteId?: string; // Optional - will use current institute if not provided
+    query: string; // Search string for name, email, or phone
+    roles?: string[]; // Optional role filter (e.g., ['STUDENT', 'TEACHER'])
+}
+
+/**
+ * Fetches autosuggest users from the API
+ * Searches by name, email, or phone number with optional role filtering
+ * Returns max 10 results, ordered by full_name ascending
+ */
+export async function fetchAutosuggestUsers(params: UserAutosuggestParams): Promise<UserDTO[]> {
+    const instituteId = params.instituteId || getCurrentInstituteId();
+
+    const { data } = await authenticatedAxiosInstance<UserDTO[]>({
+        method: 'GET',
+        url: GET_USER_AUTOSUGGEST,
+        params: {
+            instituteId,
+            query: params.query,
+            roles: params.roles?.join(','), // Convert array to comma-separated string
+        },
+    });
+
+    return data;
+}
+
+/**
+ * React Query hook for user autosuggest
+ * @param query - Search string (required)
+ * @param roles - Optional array of role names to filter by
+ * @param enabled - Whether the query should run (default: true, but disabled if query is empty)
+ */
+export function useUserAutosuggest(
+    query: string,
+    roles?: string[],
+    options?: {
+        enabled?: boolean;
+        instituteId?: string;
+    }
+) {
+    const enabled = options?.enabled !== undefined ? options.enabled : query.length > 0;
+
+    return useQuery({
+        queryKey: ['user-autosuggest', query, roles, options?.instituteId],
+        queryFn: () =>
+            fetchAutosuggestUsers({
+                query,
+                roles,
+                instituteId: options?.instituteId,
+            }),
+        enabled,
+        staleTime: 30000, // 30 seconds - reasonable for user data
+        gcTime: 60000, // 1 minute garbage collection time
+    });
+}
+
+/**
+ * Hook for autocomplete/dropdown use cases with debouncing
+ * @param query - Search string
+ * @param roles - Optional role filter
+ * @param debounceMs - Debounce delay in milliseconds (default: 300ms)
+ */
+export function useUserAutosuggestDebounced(
+    query: string,
+    roles?: string[],
+    debounceMs: number = 300,
+    options?: {
+        enabled?: boolean;
+        instituteId?: string;
+    }
+) {
+    const [debouncedQuery, setDebouncedQuery] = useState(query);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedQuery(query);
+        }, debounceMs);
+
+        return () => clearTimeout(timer);
+    }, [query, debounceMs]);
+
+    return useUserAutosuggest(debouncedQuery, roles, options);
+}
+
+/**
+ * RBAC-scoped counterpart of {@link fetchAutosuggestUsers} for the
+ * lead-assignment dialogs. When the institute has a leads_team_id and the
+ * caller is in that subtree the backend intersects the result with the
+ * caller's user-to-user descendants — so a manager can't assign a lead to
+ * someone outside their reporting chain. Outside the gate the server
+ * falls back to institute-wide autosuggest, so it's safe to use anywhere
+ * that previously called {@link fetchAutosuggestUsers}.
+ *
+ * Roles are intentionally NOT plumbed here — the backend picks the right
+ * candidate set (in-scope users + role filter) so we don't second-guess
+ * it from the client.
+ */
+export async function fetchEligibleAssignees(query: string): Promise<UserDTO[]> {
+    const instituteId = getCurrentInstituteId();
+    const { data } = await authenticatedAxiosInstance<UserDTO[]>({
+        method: 'GET',
+        url: GET_ELIGIBLE_ASSIGNEES,
+        params: { instituteId, query },
+    });
+    return data;
+}
+
+/**
+ * Debounced React Query hook that wraps {@link fetchEligibleAssignees}.
+ * Drop-in replacement for {@link useUserAutosuggestDebounced} on lead /
+ * enquiry assign pickers.
+ */
+export function useEligibleAssigneesDebounced(query: string, debounceMs: number = 300) {
+    const [debounced, setDebounced] = useState(query);
+
+    useEffect(() => {
+        const t = setTimeout(() => setDebounced(query), debounceMs);
+        return () => clearTimeout(t);
+    }, [query, debounceMs]);
+
+    return useQuery({
+        // Always-enabled so the dropdown shows the caller's scope on first
+        // open (empty query); backend returns the descendant list directly
+        // when no query is provided.
+        queryKey: ['eligible-assignees', debounced],
+        queryFn: () => fetchEligibleAssignees(debounced),
+        staleTime: 30000,
+        gcTime: 60000,
+    });
+}
+
+// Common role constants for convenience
+export const USER_ROLES = {
+    STUDENT: 'STUDENT',
+    TEACHER: 'TEACHER',
+    ADMIN: 'ADMIN',
+    COUNSELLOR: 'COUNSELLOR',
+    PARENT: 'PARENT',
+} as const;

@@ -1,0 +1,1104 @@
+/* Compact Mode Styles - must be imported before @tailwind */
+@import './styles/compact-mode.css';
+/* Catalogue tokens + themes + animations for the page-builder canvas —
+   byte-synced with the learner app (scripts/check-style-engine-sync.mjs)
+   so the canvas renders with the SAME variables/utilities as the live site.
+   Selectors are catalogue-prefixed / data-attr scoped; safe to load globally. */
+@import './styles/catalogue-tokens.css';
+@import './styles/catalogue-themes.css';
+@import './styles/catalogue-animations.css';
+@import './styles/catalogue-canvas.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Read-only rich-text (TipTap) content — paragraphs, lists, tables, blockquote.
+ * The editor stores bare HTML and styles it via .tiptap-content; read-only views
+ * render that HTML in plain divs where Tailwind's preflight resets margins to 0,
+ * so paragraphs/blank lines collapse and tables lose borders. We use a dedicated
+ * .rich-text-content class (descendant rules only — no container width, to avoid
+ * margin+width:100% overflow) applied to read-only wrappers (e.g. quiz
+ * QuestionDisplay / explanation). Globally loaded so it works even when the lazy
+ * editor chunk hasn't mounted.
+ * ------------------------------------------------------------------------- */
+.rich-text-content h1 {
+    font-size: 1.6em;
+    font-weight: 700;
+    margin: 0.8em 0 0.4em;
+    line-height: 1.25;
+}
+.rich-text-content h2 {
+    font-size: 1.35em;
+    font-weight: 700;
+    margin: 0.8em 0 0.4em;
+    line-height: 1.3;
+}
+.rich-text-content h3 {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin: 0.7em 0 0.35em;
+}
+.rich-text-content h4,
+.rich-text-content h5,
+.rich-text-content h6 {
+    font-size: 1em;
+    font-weight: 600;
+    margin: 0.6em 0 0.3em;
+}
+.rich-text-content p {
+    margin: 0 0 0.6em; /* restore paragraph spacing the editor shows (preflight zeroes it) */
+}
+.rich-text-content p:last-child {
+    margin-bottom: 0; /* no trailing gap (keeps single-paragraph cells/options tight) */
+}
+.rich-text-content p:empty {
+    min-height: 0.9em; /* preserve intentional blank lines (empty <p></p> separators) */
+}
+.rich-text-content table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0.5em 0;
+}
+.rich-text-content th,
+.rich-text-content td {
+    border: 1px solid #e5e7eb; /* neutral-200 */
+    padding: 6px 8px;
+    vertical-align: top;
+    text-align: left;
+}
+.rich-text-content th {
+    background-color: #f9fafb; /* neutral-50 */
+    font-weight: 600;
+}
+.rich-text-content ul {
+    list-style: disc;
+    margin: 0.5em 0;
+    padding-left: 1.5rem;
+}
+.rich-text-content ol {
+    list-style: decimal;
+    margin: 0.5em 0;
+    padding-left: 1.5rem;
+}
+.rich-text-content li {
+    display: list-item;
+    margin: 0.15em 0;
+}
+.rich-text-content blockquote {
+    border-left: 4px solid #e5e7eb; /* neutral-200 */
+    padding-left: 0.875rem;
+    margin: 0.75rem 0;
+    color: #374151; /* neutral-700 */
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+/* ---------------------------------------------------------------------------
+ * Safe-area + keyboard CSS variables (set by src/native/safeArea.ts +
+ * src/native/keyboard.ts at boot). On web they degrade to 0; on iOS/Android
+ * Capacitor builds they reflect env(safe-area-inset-*) and the IME height so
+ * any component can compose them into padding/margins without knowing whether
+ * it runs natively.
+ * ------------------------------------------------------------------------- */
+:root {
+    --safe-area-inset-top: 0px;
+    --safe-area-inset-right: 0px;
+    --safe-area-inset-bottom: 0px;
+    --safe-area-inset-left: 0px;
+    --keyboard-height: 0px;
+}
+
+/* Tailwind-style utilities for safe-area-aware padding. Use these on the
+ * outermost surface of any full-screen native view so the notch / Dynamic
+ * Island / Android gesture bar don't overlap content. */
+.pt-safe { padding-top: var(--safe-area-inset-top); }
+.pr-safe { padding-right: var(--safe-area-inset-right); }
+.pb-safe { padding-bottom: var(--safe-area-inset-bottom); }
+.pl-safe { padding-left: var(--safe-area-inset-left); }
+/* App-SHELL safe-area utilities (navbar / sidebars). SCOPED to `.platform-native`
+ * so they apply ONLY inside the Capacitor Android/iOS app — never the web portal.
+ * (`.platform-native` is added to <html> only when isNative(); on the web, even a
+ * mobile browser with viewport-fit=cover would otherwise pick up env() insets and
+ * shift the layout.) Base Tailwind classes (top-0 / h-screen) stay the default
+ * everywhere; these override only in the native app. */
+.platform-native .top-safe-native { top: var(--safe-area-inset-top); }
+.platform-native .pt-safe-native { padding-top: var(--safe-area-inset-top); }
+.platform-native .pb-safe-native { padding-bottom: var(--safe-area-inset-bottom); }
+.platform-native .h-screen-safe-native {
+    height: calc(100vh - var(--safe-area-inset-top) - var(--safe-area-inset-bottom));
+}
+/* For a close (X) button pinned to the top of a FULL-HEIGHT overlay (sheets,
+ * side-views, full-screen panels). Keeps its 1rem gap but pushes it below the
+ * status-bar/notch inset on native so it isn't tucked under the camera. Pair with
+ * the base `top-4` (which stays the value on web / centered dialogs). */
+.platform-native .top-safe-offset { top: calc(var(--safe-area-inset-top) + 1rem); }
+/* Top padding for a full-height overlay's CONTENT (sheets w/ p-4..p-8): the
+ * notch inset PLUS a 1.5rem gap, so the sheet title/content clears the status
+ * bar instead of rendering under the clock/icons. Native-only. */
+.platform-native .pt-safe-6 { padding-top: calc(var(--safe-area-inset-top) + 1.5rem); }
+.px-safe {
+    padding-left: var(--safe-area-inset-left);
+    padding-right: var(--safe-area-inset-right);
+}
+.py-safe {
+    padding-top: var(--safe-area-inset-top);
+    padding-bottom: var(--safe-area-inset-bottom);
+}
+.p-safe {
+    padding-top: var(--safe-area-inset-top);
+    padding-right: var(--safe-area-inset-right);
+    padding-bottom: var(--safe-area-inset-bottom);
+    padding-left: var(--safe-area-inset-left);
+}
+.min-h-screen-safe {
+    min-height: calc(100vh - var(--safe-area-inset-top) - var(--safe-area-inset-bottom));
+}
+.h-screen-safe {
+    height: calc(100vh - var(--safe-area-inset-top) - var(--safe-area-inset-bottom));
+}
+/* Sticky bottom bars (composer Send row, dashboard nav) — sits above the
+ * IME when open, otherwise above the home-indicator. The 0.5rem floor
+ * preserves layouts that paired `pb-keyboard` with Tailwind padding utilities
+ * (p-2 etc.) so the class doesn't pull desktop layouts flush against the
+ * viewport edge when both CSS variables are 0. */
+.pb-keyboard {
+    padding-bottom: max(var(--keyboard-height), var(--safe-area-inset-bottom), 0.5rem);
+}
+/* Apply to a scroll container so the browser's focus-scroll-into-view leaves
+ * the keyboard's height of room below the focused input. Pair with .pb-keyboard
+ * on the same element so there's actual content space to scroll into. */
+.scroll-pb-keyboard {
+    scroll-padding-bottom: var(--keyboard-height);
+}
+
+/* Native body styling — never let pull-to-refresh white space appear on iOS
+ * since we run as a fullscreen app. */
+.platform-native body {
+    background: #FAFAF7;
+    overscroll-behavior-y: none;
+    /* Safety net so app content clears the iOS home indicator and landscape
+     * notches. The status bar is non-overlapping (overlaysWebView:false) and on
+     * iOS the WebView already insets content (contentInset:'always'), so these
+     * resolve to 0 in the common portrait case and only engage edge-to-edge /
+     * landscape. The top inset is intentionally left to the native layer.
+     * Full-bleed surfaces that scroll their own content should compose the
+     * `pb-safe` / `px-safe` utilities instead of relying on this. */
+    padding-bottom: var(--safe-area-inset-bottom);
+    padding-left: var(--safe-area-inset-left);
+    padding-right: var(--safe-area-inset-right);
+}
+/* Edge-to-edge top inset (BOTH platforms). The WebView draws under the status
+ * bar / notch / Dynamic Island:
+ *   - Android 15 (targetSDK 35) enforces edge-to-edge and
+ *     StatusBar.setOverlaysWebView(false) no longer reserves space.
+ *   - iOS: the WKWebView spans the full screen (env(safe-area-inset-top) reports
+ *     the real notch inset), so without padding the page content scrolls up into
+ *     the Dynamic Island.
+ * Pad the top by the status-bar inset so content starts below it. Native-only
+ * (web never has `.platform-native`); resolves to 0 where the device has no inset. */
+.platform-native body {
+    padding-top: var(--safe-area-inset-top);
+    /* Colour for the status-bar + nav-bar cover strips. Follows the DEVICE/OS
+     * theme (not the app theme) so it matches the system bars and keeps the OS
+     * status-bar icons readable: white under the dark icons of light mode, black
+     * under the light icons of dark mode. */
+    --system-bar-cover: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+    .platform-native body {
+        --system-bar-cover: #000000;
+    }
+}
+/* The status-bar/notch strip is transparent and the WebView draws under it, so
+ * scrolled content appears in the camera/status-bar area above the sticky header.
+ * Paint an opaque strip over that inset (coloured to the device theme) so nothing
+ * scrolls into the notch. Sits above page content but below the sticky navbar
+ * (z-50) and modals, so it never hides them. Both iOS + Android. */
+.platform-native body::before {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: var(--safe-area-inset-top);
+    background: var(--system-bar-cover);
+    z-index: 40;
+    pointer-events: none;
+}
+/* Bottom counterpart for the navigation/home-indicator area. Uses env(safe-area-
+ * inset-bottom): on Android the system sizes it per nav mode (small for gesture
+ * nav, tall for 3-button nav); on iOS it's the home-indicator height. Re-adapts
+ * live when the nav mode/orientation changes (safeArea.ts re-measures on resize). */
+.platform-native body::after {
+    content: '';
+    position: fixed;
+    inset: auto 0 0 0;
+    height: var(--safe-area-inset-bottom);
+    background: var(--system-bar-cover);
+    z-index: 40;
+    pointer-events: none;
+}
+.platform-ios body {
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+    -ms-overflow-style: none; /* Internet Explorer 10+ */
+    scrollbar-width: none; /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+    display: none; /* Safari and Chrome */
+}
+
+@layer base {
+    :root {
+        /* ========= Common configs ========= */
+        min-height: 100vh;
+        color: hsl(var(--base-black));
+
+        /* ========= ShadCN variables ========= */
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 222.2 84% 4.9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222.2 84% 4.9%;
+        --primary: 222.2 47.4% 11.2%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 210 40% 96.1%;
+        --secondary-foreground: 222.2 47.4% 11.2%;
+        --muted: 210 40% 96.1%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --accent: 210 40% 96.1%;
+        --accent-foreground: 222.2 47.4% 11.2%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 214.3 31.8% 91.4%;
+        --input: 214.3 31.8% 91.4%;
+        --ring: 222.2 84% 4.9%;
+        --radius: 0.5rem;
+        --chart-1: 12 76% 61%;
+        --chart-2: 173 58% 39%;
+        --chart-3: 197 37% 24%;
+        --chart-4: 43 74% 66%;
+        --chart-5: 27 87% 67%;
+        --chart-6: 32 88% 83%;
+
+        /* ========= CUSTOM COLORS ========= */
+
+        --primary-50: 34 89% 96%;
+        --primary-100: 35 90% 92%;
+        --primary-200: 32 88% 83%;
+        --primary-300: 30 87% 72%;
+        --primary-400: 26 86% 61%;
+        --primary-500: 24 85% 54%;
+        --primary-600: 24 85% 48%;
+
+        /* Nav role fallbacks (overridden by theme-provider at runtime).
+           Matches the CategoryRail's current hardcoded look — solid
+           primary-500 rail, white active pill, neutral-900 icon on it.
+           See applyNavRoles. */
+        --nav-surface: 24 85% 54%; /* == --primary-500 */
+        --nav-surface-hover: 24 85% 48%; /* == --primary-600 */
+        --nav-active: 0 0% 100%; /* white */
+        --nav-active-text: 0 0% 9%; /* neutral-900 */
+        --nav-text: 0 0% 100%; /* white */
+
+        --danger-50: 0 100% 99%;
+        --danger-100: 0 86% 97%;
+        --danger-200: 351 100% 96%;
+        --danger-300: 353 100% 90%;
+        --danger-400: 0 81% 78%;
+        --danger-500: 360 76% 68%;
+        --danger-600: 0 90% 63%;
+        --danger-700: 359 83% 55%;
+
+        /* Warning Colors */
+        --warning-50: 45 100% 96%; /* #FFF9EB */
+        --warning-100: 45 90% 88%; /* #FFF0D6 */
+        --warning-200: 43 85% 80%; /* #FFE4B8 */
+        --warning-300: 41 80% 71%; /* #FFD699 */
+        --warning-400: 39 75% 63%; /* #FFC266 */
+        --warning-500: 37 100% 50%; /* #FFA500 */
+        --warning-600: 35 95% 47%; /* #FF9900 */
+        --warning-700: 33 90% 44%; /* #FF8800 */
+
+        /* Success Colors */
+        --success-50: 142 76% 95%; /* #E6F7EF */
+        --success-100: 142 72% 88%; /* #D1F0E2 */
+        --success-200: 142 68% 80%; /* #B3E6D1 */
+        --success-300: 142 64% 71%; /* #8CD9BC */
+        --success-400: 142 60% 63%; /* #66CCA7 */
+        --success-500: 142 56% 54%; /* #40BF91 */
+        --success-600: 142 52% 47%; /* #33A67E */
+        --success-700: 142 48% 40%; /* #26996B */
+
+        /* Info Colors */
+        --info-50: 214 97% 95%; /* #E9F3FF */
+        --info-100: 214 93% 88%; /* #D6E9FF */
+        --info-200: 214 89% 80%; /* #B3D6FF */
+        --info-300: 214 85% 71%; /* #8CC2FF */
+        --info-400: 214 81% 63%; /* #66ADFF */
+        --info-500: 214 77% 54%; /* #4096FF */
+        --info-600: 214 73% 47%; /* #2680FF */
+        --info-700: 214 69% 40%;
+        --sidebar-background: 0 0% 98%;
+        --sidebar-foreground: 240 5.3% 26.1%;
+        --sidebar-primary: 240 5.9% 10%;
+        --sidebar-primary-foreground: 0 0% 98%;
+        --sidebar-accent: 240 4.8% 95.9%;
+        --sidebar-accent-foreground: 240 5.9% 10%;
+        --sidebar-border: 220 13% 91%;
+        --sidebar-ring: 217.2 91.2% 59.8%;
+    }
+
+    .dark {
+        --background: 222.2 84% 4.9%;
+        --foreground: 210 40% 98%;
+        --card: 222.2 84% 4.9%;
+        --card-foreground: 210 40% 98%;
+        --popover: 222.2 84% 4.9%;
+        --popover-foreground: 210 40% 98%;
+        --primary: 210 40% 98%;
+        --primary-foreground: 222.2 47.4% 11.2%;
+        --secondary: 217.2 32.6% 17.5%;
+        --secondary-foreground: 210 40% 98%;
+        --muted: 217.2 32.6% 17.5%;
+        --muted-foreground: 215 20.2% 65.1%;
+        --accent: 217.2 32.6% 17.5%;
+        --accent-foreground: 210 40% 98%;
+        --destructive: 0 62.8% 30.6%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 217.2 32.6% 17.5%;
+        --input: 217.2 32.6% 17.5%;
+        --ring: 212.7 26.8% 83.9%;
+        --chart-1: 220 70% 50%;
+        --chart-2: 160 60% 45%;
+        --chart-3: 30 80% 55%;
+        --chart-4: 280 65% 60%;
+        --chart-5: 340 75% 55%;
+
+        /* ========= CUSTOM COLORS ========= */
+        --base-primary: 0 0% 9%;
+        --base-secondary: 0 0% 15%;
+        --sidebar-background: 240 5.9% 10%;
+        --sidebar-foreground: 240 4.8% 95.9%;
+        --sidebar-primary: 224.3 76.3% 48%;
+        --sidebar-primary-foreground: 0 0% 100%;
+        --sidebar-accent: 240 3.7% 15.9%;
+        --sidebar-accent-foreground: 240 4.8% 95.9%;
+        --sidebar-border: 240 3.7% 15.9%;
+        --sidebar-ring: 217.2 91.2% 59.8%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+        color: #525252;
+    }
+    /* Chrome, Safari and Opera */
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+    .no-scrollbar {
+        -ms-overflow-style: none; /* IE and Edge */
+        scrollbar-width: none; /* Firefox */
+    }
+    .scaled-gap {
+        --scale: 0.5;
+        margin-top: calc((var(--scale) - 1) * 100%);
+    }
+
+    .error-toast {
+        background-color: #fef2f2 !important; /* danger-100 */
+        color: #4b4b4b !important; /* neutral-600 */
+    }
+
+    .error-toast > div {
+        color: #f64c4c !important; /* danger-600 */
+        font-weight: 600 !important;
+        font-size: 16px !important;
+    }
+    .success-toast {
+        background-color: #f2faf6 !important; /* danger-100 */
+        color: #4b4b4b !important; /* neutral-600 */
+    }
+
+    .success-toast > div {
+        color: #47b881 !important; /* danger-600 */
+        font-weight: 600 !important;
+        font-size: 16px !important;
+    }
+
+    .sidebar-open {
+        overflow: hidden;
+    }
+    img {
+        @apply inline-block;
+    }
+
+    .dialog-no-close-icon button[data-dialog-close] {
+        display: none;
+    }
+
+    .dialog-height {
+        height: calc(100vh - 80px);
+    }
+    /* Shrinks question thumbnails in the paper-editor rail. Uses zoom (not
+       transform scale) so the layout box shrinks too and the rail's scroll
+       height matches what is visible. */
+    .question-rail-zoom {
+        zoom: 0.26;
+    }
+    .hide-scrollbar {
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE and Edge */
+    }
+
+    .hide-scrollbar::-webkit-scrollbar {
+        display: none; /* Chrome, Safari and Opera */
+    }
+}
+
+@layer utilities {
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .no-scrollbar {
+        -ms-overflow-scrollbar: none; /* For IE and Edge */
+        scrollbar-width: none; /* For Firefox */
+    }
+
+    .dialog-no-close-icon button[data-dialog-close] {
+        display: none;
+    }
+}
+
+@layer utilities {
+    .dialog-no-close-icon button[data-dialog-close] {
+        display: none;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .no-scrollbar {
+        -ms-overflow-scrollbar: none; /* For IE and Edge */
+        scrollbar-width: none; /* For Firefox */
+    }
+}
+
+@layer components {
+    .table-shadow-left {
+        box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.1);
+    }
+
+    .table-shadow-right {
+        box-shadow: -4px 0 8px -2px rgba(0, 0, 0, 0.1);
+    }
+
+    .yoopta-editor-custom {
+        font-size: 16px;
+    }
+
+    /* Yoopta image lightbox fix: the zoom overlay uses z-index:50 (same as
+       the sticky editor header) and a 95% white backdrop. Because the
+       editor content lives inside a `relative z-20` stacking context, the
+       overlay's z-index gets trapped below the header, and the near-white
+       backdrop lets header/sidebar bleed through.
+       1. When any descendant image is zoomed, raise the editor container
+          above the header so the lightbox paints over everything.
+       2. Replace the 95%-white backdrop with an opaque dark one. */
+    div.relative.z-20:has(.yoopta-image--is-zoomed) {
+        z-index: 100 !important;
+    }
+
+    .yoopta-image-zoom-overlay {
+        background-color: rgba(0, 0, 0, 0.85) !important;
+    }
+
+    .yoopta-editor-custom [data-slate-placeholder='true'] {
+        font-size: 16px !important;
+    }
+
+    .yoopta-editor-custom [contenteditable='true'] {
+        font-size: 16px !important;
+    }
+
+    /* Target the command input specifically */
+    .yoopta-editor-custom [role='textbox'],
+    .yoopta-editor-custom input {
+        font-size: 16px !important;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+        height: 8px; /* for horizontal scrollbar */
+        width: 8px; /* for vertical scrollbar */
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    /* --primary-* are HSL channel triplets ("32 88% 83%"), so rgb() produced an
+       invalid color and the thumb silently fell back to the chunky UA default. */
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: hsl(var(--primary-200));
+        border-radius: 4px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: hsl(var(--primary-300));
+    }
+
+    /* Firefox has no ::-webkit pseudo-elements — without this it keeps the full
+       -width scrollbar while every other browser gets the slim one. */
+    .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: hsl(var(--primary-200)) transparent;
+    }
+}
+
+.introjs-tooltip.single-step .introjs-button.introjs-donebutton {
+    display: none !important;
+}
+
+/* Center the tooltip and match the design */
+.custom-tooltip {
+    background-color: white !important;
+    pointer-events: auto !important;
+    z-index: 99999 !important;
+    border-radius: 0.5rem !important;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    position: relative !important;
+    min-width: fit-content !important;
+    width: 300px !important;
+    margin: auto !important;
+}
+
+.tooltip-postion {
+    position: absolute !important;
+    bottom: -40% !important;
+}
+
+.introjs-tooltip-title {
+    color: hsl(var(--primary-500)) !important;
+    text-wrap: nowrap !important;
+    font-size: 1.1rem !important;
+    text-align: left !important;
+    font-weight: 500 !important;
+}
+.custom-tooltip .introjs-arrow {
+    display: none !important;
+}
+.introjs-tooltip-header {
+    text-align: left !important;
+    background-color: hsl(var(--primary-50)) !important;
+    display: flex !important;
+    padding: 6px !important;
+    padding-left: 16px !important;
+    gap: 1rem !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    border-bottom: 1px solid rgb(229 231 235) !important;
+    border-top-right-radius: 0.5rem !important;
+    border-top-left-radius: 0.5rem !important;
+}
+
+.introjs-skipbutton {
+    font-size: 1.5rem !important;
+    font-weight: 300 !important;
+}
+.introjs-skipbutton {
+    position: relative !important;
+}
+.custom-tooltip .introjs-tooltiptext {
+    color: rgb(75 85 99) !important;
+    font-size: 0.8rem !important;
+    text-align: left !important;
+    line-height: 1.6 !important;
+    padding: 8px 16px !important;
+}
+
+.custom-tooltip .introjs-bullets {
+    display: none !important;
+}
+
+.custom-tooltip .introjs-progress .introjs-progressbar {
+    background-color: hsl(var(--primary-500)) !important;
+}
+
+.custom-tooltip .introjs-tooltipbuttons {
+    border-top: none !important;
+}
+
+.custom-tooltip .introjs-button {
+    background: white !important;
+    border: 1px solid rgb(229 231 235) !important;
+    border-radius: 0.4rem !important;
+    color: rgb(75 85 99) !important;
+    font-size: 0.8rem !important;
+    font-weight: 400 !important;
+    padding: 0.5rem 0rem !important;
+    text-shadow: none !important;
+    width: 100% !important;
+    text-align: center !important;
+}
+
+.custom-tooltip .introjs-disabled {
+    display: none !important;
+}
+
+.introjs-tooltiptext {
+    text-align: center;
+}
+
+.introjs-tooltipbuttons {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+}
+
+.custom-highlight {
+    background-color: rgba(33, 150, 243, 0.2) !important;
+    outline: 2px solid hsl(var(--primary-300)) !important;
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+.App-menu_top {
+    position: fixed !important;
+    top: 10;
+    left: 0;
+}
+.toolbar {
+    display: none !important;
+}
+.sidebar-trigger__label-element {
+    display: none !important;
+}
+/* .App-toolbar{
+    background-color: hsl(var(--primary-100)) !important;
+} */
+
+.HintViewer {
+    display: none !important;
+}
+/* .Island{
+    background-color: hsl(var(--primary-100)) !important;
+} */
+
+.zoom-actions {
+    display: none !important;
+}
+
+.buttonList {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 4px !important;
+}
+.App-menu__left {
+    max-width: 80vw !important;
+}
+
+/* In your global CSS file (e.g., global.css, or a PresentationView.module.css) */
+
+/* Ensure the .reveal container establishes a clear stacking context if needed,
+   though position:fixed already does. */
+/* .reveal {
+    position: relative;
+    z-index: 1000;
+} */
+
+/* Target the Reveal.js controls specifically */
+.reveal .controls {
+    z-index: 40 !important; /* Default is often around 30. Increase if necessary.
+                             Use !important to override theme styles if there's a conflict.
+                             Pick a value that is logically above your slide content's z-index.
+                             If your main container is 1000, and slides might have content reaching
+                             up to say, 10 within the reveal context, 40 is fine.
+                             If slide content itself has very high z-indexes, you might need higher.
+                             Let's try a moderately high value that should be above most slide content.
+                          */
+}
+
+/* Optional: If slides or their backgrounds are an issue */
+/* .reveal .slides > section {
+    By default, slides don't have a high z-index unless transformed or stacked.
+     Ensure their content doesn't create an unexpectedly high z-index.
+    z-index: 1;
+} */
+
+.reveal .slide-background {
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* Landing page override to fix width and positioning issues from reveal.js styles */
+.landing-page-container .landing-page-content,
+.landing-page-container .landing-page-content main {
+    width: 100% !important;
+    height: auto !important;
+    position: static !important;
+    display: block !important;
+    left: auto !important;
+    top: auto !important;
+    z-index: auto !important;
+}
+
+.landing-page-container .landing-page-content section {
+    width: 100% !important;
+}
+
+/* ========= RESPONSIVE UTILITIES ========= */
+
+/* Mobile-friendly touch targets - minimum 44px for accessibility */
+@layer utilities {
+    .touch-target {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .touch-target-sm {
+        min-height: 36px;
+        min-width: 36px;
+    }
+}
+
+/* Safe area padding for iOS notch and home indicator */
+@layer utilities {
+    .safe-area-inset-top {
+        padding-top: env(safe-area-inset-top);
+    }
+
+    .safe-area-inset-bottom {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .safe-area-inset-left {
+        padding-left: env(safe-area-inset-left);
+    }
+
+    .safe-area-inset-right {
+        padding-right: env(safe-area-inset-right);
+    }
+}
+
+/* Mobile-specific layout helpers */
+@layer utilities {
+    /* Prevent text selection on mobile for UI elements */
+    .no-select {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+    }
+
+    /* Prevent tap highlight on mobile */
+    .no-tap-highlight {
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Momentum scrolling for iOS */
+    .scroll-touch {
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+/* Mobile viewport fix for 100vh issues */
+@layer base {
+    :root {
+        --vh: 1vh;
+    }
+}
+
+@layer utilities {
+    .min-h-screen-mobile {
+        min-height: 100vh;
+        min-height: calc(var(--vh, 1vh) * 100);
+    }
+
+    .h-screen-mobile {
+        height: 100vh;
+        height: calc(var(--vh, 1vh) * 100);
+    }
+}
+
+/* Mobile sidebar overlay backdrop */
+@layer components {
+    .mobile-sidebar-backdrop {
+        @apply fixed inset-0 z-40 bg-black/50;
+    }
+}
+
+/* Responsive table wrapper for horizontal scrolling */
+@layer components {
+    .table-responsive {
+        @apply -mx-4 overflow-x-auto px-4;
+    }
+
+    @screen md {
+        .table-responsive {
+            @apply mx-0 px-0;
+        }
+    }
+}
+
+/* Card variants for mobile */
+@layer components {
+    .card-mobile {
+        @apply rounded-none border-x-0;
+    }
+
+    @screen sm {
+        .card-mobile {
+            @apply rounded-lg border-x;
+        }
+    }
+}
+
+/* Custom animations for enhanced student sidebar */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slideInRight {
+    animation: slideInRight 0.4s ease-out;
+}
+
+.animate-scaleIn {
+    animation: scaleIn 0.3s ease-out;
+}
+
+/* Smooth hover scale animations */
+.hover\:scale-102:hover {
+    transform: scale(1.02);
+}
+
+.hover\:scale-105:hover {
+    transform: scale(1.05);
+}
+
+.hover\:scale-110:hover {
+    transform: scale(1.1);
+}
+
+/* ==================================================================== */
+/* ARCO CSS CONFLICT FIXES                                              */
+/* Restore Tailwind Preflight for common elements overridden by Arco    */
+/* Usage of 'body' prefix ensures specificity > Arco (0,0,1) but < Util (0,1,0) */
+/* ==================================================================== */
+
+@layer base {
+    body h1,
+    body h2,
+    body h3,
+    body h4,
+    body h5,
+    body h6 {
+        font-size: inherit;
+        font-weight: inherit;
+        margin: 0;
+        line-height: inherit;
+    }
+
+    body ol,
+    body ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    body p {
+        margin: 0;
+    }
+
+    /* Fix potential button overrides */
+    body button {
+        text-transform: none;
+        margin: 0;
+    }
+}
+
+/* =========================================================================
+   Yoopta Accordion visibility override
+   --------------------------------------------------------------------------
+   The default Yoopta accordion ships with a dark-theme (near-black) background
+   on list items, no gradient, and no affordance around empty heading/content
+   areas. On the admin's white canvas this makes the block look like a black
+   strip with blank space below it — users insert one and can't tell what to
+   do.
+
+   These rules live OUTSIDE Tailwind's @layer so they aren't folded into the
+   components/utilities layers (which can be overridden by Yoopta's
+   runtime-injected CSS). Each rule uses a `body` prefix for extra specificity
+   and `!important` to beat Yoopta's inline theming.
+   ========================================================================= */
+
+body .yoopta-accordion-list {
+    margin: 10px 0 !important;
+    border: 1px solid #e0e6ef !important;
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+body .yoopta-accordion-list-item {
+    background: #ffffff !important;
+    border: none !important;
+    border-top: 1px solid #e5e9f0 !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    position: relative !important;
+}
+
+body .yoopta-accordion-list-item:first-child {
+    border-top: none !important;
+}
+
+/* Gradient header row so the accordion is clearly visible on a white canvas
+   and users can see where to click / type the title. */
+body .yoopta-accordion-list-item-heading {
+    padding: 14px 44px 14px 18px !important;
+    min-height: 50px !important;
+    font-weight: 600 !important;
+    font-size: 15px !important;
+    color: #1f2937 !important;
+    background: linear-gradient(90deg, #eef4ff 0%, #f5f7fa 100%) !important;
+    border-bottom: 1px solid #e5e9f0 !important;
+    cursor: pointer !important;
+    transition: background 0.15s ease-in-out !important;
+    box-sizing: border-box !important;
+}
+
+body .yoopta-accordion-list-item-heading:hover {
+    background: linear-gradient(90deg, #e3ecff 0%, #edf1f7 100%) !important;
+}
+
+body .yoopta-accordion-list-item-heading:focus-within {
+    outline: 2px solid #3b82f6 !important;
+    outline-offset: -2px !important;
+}
+
+/* Content area — distinct off-white background + left accent + generous
+   min-height so the "type the content here" zone is obvious even when
+   the item is empty. Without this the content pane was pure white on a
+   white canvas and looked invisible. */
+body .yoopta-accordion-list-item-content {
+    padding: 16px 18px 16px 22px !important;
+    min-height: 64px !important;
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+    color: #374151 !important;
+    background: #f8fafc !important;
+    border-top: 1px solid #e5e9f0 !important;
+    border-left: 3px solid #3b82f6 !important;
+    box-sizing: border-box !important;
+}
+
+/* Make Slate placeholder text (the gray hint inside empty contenteditable
+   spans) clearly visible so users know where to type. */
+body .yoopta-accordion-list-item-heading [data-slate-placeholder='true'],
+body .yoopta-accordion-list-item-content [data-slate-placeholder='true'] {
+    color: #9ca3af !important;
+    font-style: italic !important;
+    opacity: 1 !important;
+}
+
+/* Continuous numbered-list numbering in the Yoopta editor.
+   Yoopta computes each item's number from its position in a consecutive run and
+   RESETS after any non-list block — so a numbered list interrupted by an image
+   restarts at 1 (…, 4, [image], 1). We hide Yoopta's computed number and drive
+   it with a single continuous CSS counter instead, so the steps keep counting
+   across the image (…, 4, [image], 5, 6 …). Mirrors the learner-side fix in
+   DocumentWithMermaid so the editor and the published view agree.
+   Trade-offs (accepted): every numbered list in one document shares one
+   sequence — two genuinely separate numbered lists in the same doc continue
+   rather than restart, and a NESTED numbered list counts in the same sequence
+   as its parent. Both are fine for flat step-by-step content. */
+.yoopta-editor {
+    counter-reset: yoo-numbered-list;
+}
+.yoopta-editor .yoopta-numbered-list {
+    counter-increment: yoo-numbered-list;
+}
+.yoopta-editor .yoopta-numbered-list-count {
+    font-size: 0; /* hide Yoopta's own "N." text, keep the absolutely-positioned slot */
+}
+.yoopta-editor .yoopta-numbered-list-count::before {
+    content: counter(yoo-numbered-list) '.';
+    font-size: 16px; /* matches .yoopta-numbered-list font-size */
+}
+
+/* Uploaded images are stored with their natural pixel size (`sizes` on upload),
+   so Yoopta renders the image block at that raw width. A large photo (e.g.
+   ~2000px) then overflows the editor column: the block's options (⋯) button and
+   resize handles — pinned to the image's right edge — land off-frame, and a
+   horizontal scrollbar appears that swallows the click. Cap the image block to
+   the column width so it always fits and its controls stay reachable. A user's
+   deliberate down-size (width < column) is below the cap, so this doesn't touch
+   intentionally-smaller images. */
+.yoopta-editor .yoopta-image,
+.yoopta-editor .yoopta-image-inner {
+    max-width: 100% !important;
+}
+.yoopta-editor .yoopta-image-inner img {
+    max-width: 100% !important;
+    height: auto !important;
+}
+

@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" id="app-favicon" type="image/svg+xml" href="/favicon.ico" />
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#FFFFFF" />
+    <title>Admin Dashboard</title>
+    <script>
+        // Pre-load white-label branding (favicon/title/font) from cache before React mounts
+        // to avoid the default Vacademy favicon flashing on white-labeled domains.
+        // Mirrors the cache written by services/domain-routing.ts:cacheInstituteBranding.
+        (function () {
+            try {
+                var raw = null;
+                var selectedId = localStorage.getItem('selectedInstituteId');
+                if (selectedId !== null) {
+                    raw = localStorage.getItem(selectedId);
+                }
+                if (!raw) {
+                    raw = localStorage.getItem('current_domain_branding');
+                }
+                if (!raw) {
+                    // Cold cache (no branding yet): the static /favicon.ico is the
+                    // Vacademy mark. Keep it only on Vacademy-owned hosts; on a
+                    // white-labelled domain blank it so the Vacademy "V" never
+                    // flashes in the tab before React resolves the institute icon.
+                    var h = location.hostname;
+                    var isVacademyHost =
+                        /(^|\.)vacademy\.io$/.test(h) || h === 'localhost' || h === '127.0.0.1';
+                    if (!isVacademyHost) {
+                        var blank = 'data:image/svg+xml,' + encodeURIComponent(
+                            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"></svg>'
+                        );
+                        document.querySelectorAll('link[rel*="icon"]').forEach(function (lnk) {
+                            lnk.setAttribute('href', blank);
+                        });
+                    }
+                    return;
+                }
+                var branding = JSON.parse(raw);
+                if (branding.tabIconUrl) {
+                    var href = branding.tabIconUrl;
+                    var links = document.querySelectorAll('link[rel*="icon"]');
+                    if (links && links.length) {
+                        links.forEach(function (lnk) { lnk.setAttribute('href', href); });
+                    } else {
+                        var link = document.createElement('link');
+                        link.setAttribute('rel', 'icon');
+                        link.setAttribute('href', href);
+                        document.head.appendChild(link);
+                    }
+                    var sicon = document.querySelector('link[rel="shortcut icon"]');
+                    if (!sicon) {
+                        sicon = document.createElement('link');
+                        sicon.setAttribute('rel', 'shortcut icon');
+                        document.head.appendChild(sicon);
+                    }
+                    sicon.setAttribute('href', href);
+                }
+                if (branding.tabText && String(branding.tabText).trim()) {
+                    document.title = String(branding.tabText).trim();
+                }
+                if (branding.fontFamily) {
+                    var mapFamily = function (f) {
+                        var key = String(f).toUpperCase();
+                        if (key === 'INTER')
+                            return 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+                        if (key === 'CAIRO')
+                            return 'Cairo, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+                        if (key === 'PLAYPEN SANS')
+                            return 'Playpen Sans, cursive, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+                        if (key === 'WORK SANS')
+                            return 'Work Sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+                        if (key === 'LEXEND')
+                            return 'Lexend, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+                        return f;
+                    };
+                    var resolved = mapFamily(branding.fontFamily);
+                    document.documentElement.style.setProperty('--app-font-family', resolved);
+                    if (document.body) document.body.style.fontFamily = resolved;
+                }
+            } catch (e) { /* ignore */ }
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Curated institute fonts (Settings > Appearance font picker). Keep in
+         sync with constants/themes/fonts.ts and the learner app's index.html. -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Open+Sans:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Lexend:wght@300;400;500;600;700&family=Work+Sans:wght@300;400;500;600;700&family=Cairo:wght@300;400;500;600;700&family=Playpen+Sans:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet" />
+    <!-- <link
+            rel="stylesheet"
+            href="https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/dev/index.css"
+        /> -->
+    <link rel="stylesheet" href="/styles.css" />
+    <!-- Capture errors that fire before the app's JS modules finish parsing
+         (e.g. TDZ in a vendor chunk). Sentry.init() flushes this queue. -->
+    <script>
+        window.__earlyErrors = [];
+        window.addEventListener('error', function (e) {
+            window.__earlyErrors.push({
+                kind: 'error',
+                message: e.message,
+                filename: e.filename,
+                lineno: e.lineno,
+                colno: e.colno,
+                error: e.error,
+            });
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+            window.__earlyErrors.push({ kind: 'unhandledrejection', reason: e.reason });
+        });
+    </script>
+    <!-- Post-deploy recovery for assets that come back as HTML. Two causes:
+         (a) this cached page references hashed chunks that no longer exist,
+         (b) far more common — Cloudflare Pages has no 404, so during the
+             deploy-propagation window an edge holding the new index.html but
+             not yet its assets answers /assets/<chunk>.js with the SPA
+             fallback: 200 text/html, cache-control max-age=14400.
+         Either way the entry module graph fails BEFORE the app can boot, so
+         src/lib/chunk-reload.ts never installs and this pre-boot guard is the
+         only thing running. Because (b) leaves HTML cached under a .js URL for
+         four hours, a plain location.reload() re-reads the poisoned body and
+         can never recover — so we re-fetch the failed URLs with
+         cache:'reload' (bypasses AND overwrites the cache entry) first, then
+         reload after a short backoff so the retry lands once propagation has
+         finished. Shares chunk-reload.ts's sessionStorage budget, backoff and
+         in-flight flag (same key/limits/flag — keep the two in sync). -->
+    <script>
+        (function () {
+            var KEY = 'vacademy:chunk-reload-attempts';
+            var WINDOW_MS = 60000; // must exceed all attempts' purge + backoff + load, else the budget resets and we loop forever
+            var MAX_RELOADS = 3;
+            var BACKOFF_MS = [0, 1500, 3000];
+            var PURGE_TIMEOUT_MS = 8000; // a purge cut short mid-download does NOT replace the cached entry
+            var COLLECT_MS = 150; // the entry graph fails as a burst; gather the whole burst before purging
+            var failed = [];
+            var scheduled = false;
+
+            function recover() {
+                // Shared with chunk-reload.ts so the two guards can't both spend a slot.
+                if (window.__chunkRecovering__) return;
+                var rec = { count: 0, firstAt: 0 };
+                try {
+                    var parsed = JSON.parse(sessionStorage.getItem(KEY));
+                    if (parsed && Date.now() - parsed.firstAt <= WINDOW_MS) rec = parsed;
+                } catch (err) { /* missing/corrupt record — treat as empty */ }
+                if (rec.count >= MAX_RELOADS) return; // genuinely broken deploy: stop, leave the error visible
+                window.__chunkRecovering__ = true;
+                try {
+                    sessionStorage.setItem(KEY, JSON.stringify({
+                        count: rec.count + 1,
+                        firstAt: rec.firstAt || Date.now(),
+                    }));
+                } catch (err) { /* storage unavailable — still reload (matches chunk-reload.ts) */ }
+
+                var delay = BACKOFF_MS[rec.count] || 0;
+                var done = false;
+                function reload() {
+                    if (done) return;
+                    done = true;
+                    setTimeout(function () { window.location.reload(); }, delay);
+                }
+                if (typeof fetch !== 'function') return reload();
+                setTimeout(reload, PURGE_TIMEOUT_MS); // a hanging edge must not strand the page
+                var purges = failed.map(function (url) {
+                    return fetch(url, { cache: 'reload', credentials: 'same-origin' })
+                        .then(function () { }, function () { });
+                });
+                Promise.all(purges).then(reload, reload);
+            }
+
+            window.addEventListener('error', function (e) {
+                if (window.__chunkRecovering__) return;
+                var t = e.target;
+                if (!t || t === window || !t.tagName) return; // runtime JS error, not a resource load failure
+                var url = '';
+                if (t.tagName === 'SCRIPT') {
+                    url = t.src || '';
+                } else if (t.tagName === 'LINK') {
+                    var rel = String(t.rel || '').toLowerCase();
+                    if (rel === 'stylesheet' || rel === 'modulepreload') url = t.href || '';
+                }
+                // Only our hashed build output — never third-party scripts
+                // (CDN/analytics blocked by an ad-blocker must not reload us).
+                if (url.indexOf(location.origin + '/assets/') !== 0) return;
+                if (failed.indexOf(url) === -1) failed.push(url);
+                if (scheduled) return;
+                scheduled = true;
+                setTimeout(recover, COLLECT_MS);
+            }, true);
+        })();
+    </script>
+    <!-- jQuery must be loaded BEFORE any bundles for MathQuill compatibility -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script>
+        window.EXCALIDRAW_ASSET_PATH = "/";
+    </script>
+</head>
+
+<body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+</body>
+
+</html>

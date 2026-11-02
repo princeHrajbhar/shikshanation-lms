@@ -1,0 +1,189 @@
+package vacademy.io.admin_core_service.features.common.repository;
+
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+import vacademy.io.admin_core_service.features.common.entity.CustomFields;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface CustomFieldRepository extends JpaRepository<CustomFields, String> {
+
+  interface FlatFieldProjection {
+    String getCustomFieldId();
+
+    String getFieldKey();
+
+    String getFieldName();
+
+    String getFieldType();
+
+    String getDefaultValue();
+
+    String getConfig();
+
+    String getSubject();
+
+    int getFormOrder();
+
+    boolean getIsMandatory();
+
+    boolean getIsFilter();
+
+    boolean getIsSortable();
+
+    boolean getIsHidden();
+
+    String getInstituteId();
+
+    String getSessionId();
+
+    String getSessionTitle();
+
+    LocalDateTime getStartTime();
+
+    LocalDateTime getLastEntryTime();
+
+    String getAccessLevel();
+
+    String getCoverFileId();
+
+    Boolean getRequireEmailVerification();
+
+    Boolean getRequirePhoneVerification();
+
+    String getWhatsappOtpTemplateName();
+  }
+
+  @Query(value = """
+      SELECT
+        cf.id               AS customFieldId,
+        cf.field_key        AS fieldKey,
+        cf.field_name       AS fieldName,
+        cf.field_type       AS fieldType,
+        cf.default_value    AS defaultValue,
+        cf.config           AS config,
+        cf.form_order       AS formOrder,
+        cf.is_mandatory     AS isMandatory,
+        cf.is_filter        AS isFilter,
+        cf.is_sortable      AS isSortable,
+        cf.is_hidden        AS isHidden,
+
+        s.institute_id      AS instituteId,
+        s.id                AS sessionId,
+        s.title             AS sessionTitle,
+        s.start_time        AS startTime,
+        s.last_entry_time   AS lastEntryTime,
+        s.access_level      AS accessLevel,
+        s.subject           AS subject,
+        s.cover_file_id     AS coverFileId,
+        s.require_email_verification AS requireEmailVerification,
+        s.require_phone_verification AS requirePhoneVerification,
+        s.whatsapp_otp_template_name AS whatsappOtpTemplateName
+      FROM live_session s
+      INNER JOIN institute_custom_fields icf
+             ON icf.type     = 'SESSION'
+            AND icf.type_id  = s.id
+            AND icf.status   = 'ACTIVE'
+      LEFT JOIN custom_fields cf
+             ON cf.id = icf.custom_field_id
+            AND cf.status = 'ACTIVE'
+      WHERE s.id     = :sessionId
+        AND s.status = 'LIVE'
+      ORDER BY cf.form_order ASC, cf.created_at ASC
+      """, nativeQuery = true)
+  List<FlatFieldProjection> getSessionCustomFieldsBySessionId(@Param("sessionId") String sessionId);
+
+  /**
+   * Find custom field by field key
+   */
+  Optional<CustomFields> findByFieldKey(String fieldKey);
+
+  /**
+   * Find custom field by field key and institute ID (through institute custom
+   * field mapping)
+   */
+
+  // In CustomFieldRepository
+  Optional<CustomFields> findTopByFieldKeyAndStatusOrderByCreatedAtDesc(String fieldKey, String status);
+
+  /**
+   * Find all DROPDOWN custom fields for an institute that are ACTIVE
+   * Uses DISTINCT ON with LOWER(field_name) to return only one record per unique
+   * field name (case-insensitive)
+   * Keeps the most recent one based on created_at
+   */
+  @Query(value = """
+      SELECT DISTINCT ON (LOWER(cf.field_name)) cf.*
+      FROM custom_fields cf
+      WHERE cf.id IN (
+          SELECT icf.custom_field_id FROM institute_custom_fields icf
+          WHERE icf.institute_id = :instituteId
+          AND icf.status = :status
+      )
+      AND UPPER(cf.field_type) = UPPER(:fieldType)
+      AND cf.status = :status
+      ORDER BY LOWER(cf.field_name), cf.created_at DESC, cf.form_order ASC
+      """, nativeQuery = true)
+  List<CustomFields> findDropdownCustomFieldsByInstituteId(
+      @Param("instituteId") String instituteId,
+      @Param("fieldType") String fieldType,
+      @Param("status") String status);
+
+  /**
+   * Find custom field by field_key and institute_id
+   * Used for update operations to ensure we get the correct custom field for a
+   * specific institute
+   */
+  @Query(value = """
+      SELECT cf.*
+      FROM custom_fields cf
+      JOIN institute_custom_fields icf ON icf.custom_field_id = cf.id
+      WHERE cf.field_key = :fieldKey
+        AND icf.institute_id = :instituteId
+        AND icf.status = 'ACTIVE'
+        AND cf.status = 'ACTIVE'
+      LIMIT 1
+      """, nativeQuery = true)
+  Optional<CustomFields> findByFieldKeyAndInstituteId(
+      @Param("fieldKey") String fieldKey,
+      @Param("instituteId") String instituteId);
+
+  /**
+   * Find custom fields by field_key with pessimistic lock to prevent race conditions
+   * during custom field creation.
+   *
+   * Returns a list (NOT Optional) because the DB legitimately holds multiple
+   * rows sharing (field_key, status) — historical duplicates exist from before
+   * the lock was introduced. Mapping to Optional blows up with "Query did not
+   * return a unique result" on any institute that has duplicates. Callers
+   * should take the first (most recent) row from the list.
+   *
+   * JPQL (not native) because Hibernate rejects {@code @Lock} on native queries
+   * with "Illegal attempt to set lock mode for a native query".
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT cf FROM CustomFields cf WHERE cf.fieldKey = :fieldKey AND cf.status = :status ORDER BY cf.createdAt DESC")
+  java.util.List<CustomFields> findByFieldKeyWithLock(
+      @Param("fieldKey") String fieldKey,
+      @Param("status") String status);
+
+  /**
+   * Find a custom field by field_key regardless of status. Used by
+   * find-or-create logic so a DELETED custom field with the same key can be
+   * reactivated instead of triggering a unique-constraint violation on insert.
+   *
+   * Returns a list for the same reason as {@link #findByFieldKeyWithLock} —
+   * historical duplicates exist; callers must take the first (most recent).
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT cf FROM CustomFields cf WHERE cf.fieldKey = :fieldKey ORDER BY cf.createdAt DESC")
+  java.util.List<CustomFields> findByFieldKeyAnyStatusWithLock(@Param("fieldKey") String fieldKey);
+
+}

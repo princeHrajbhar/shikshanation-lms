@@ -1,0 +1,77 @@
+package vacademy.io.admin_core_service.features.institute.service;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import vacademy.io.admin_core_service.features.institute.dto.InstituteInfoDTO;
+import vacademy.io.admin_core_service.features.institute.dto.InstituteSearchProjection;
+import vacademy.io.admin_core_service.features.institute.repository.InstituteRepository;
+import vacademy.io.common.exceptions.VacademyException;
+import vacademy.io.common.institute.entity.Institute;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class InstituteService {
+    @Autowired
+    private InstituteRepository instituteRepository;
+
+    @Transactional(readOnly = true)
+    public Institute findById(String instituteId) {
+        return instituteRepository.findById(instituteId)
+                .orElseThrow(() -> new VacademyException("Institute not found"));
+    }
+
+    @Transactional(readOnly = true)
+    public InstituteInfoDTO getInstituteById(String instituteId) {
+        Institute institute = instituteRepository.findById(instituteId)
+                .orElseThrow(() -> new VacademyException("Institute not found"));
+        return InstituteInfoDTO.builder()
+                .id(institute.getId())
+                .instituteName(institute.getInstituteName())
+                .setting(institute.getSetting())
+                .email(institute.getEmail())
+                .instituteThemeCode(institute.getInstituteThemeCode())
+                .instituteLogoFileId(institute.getLogoFileId())
+                .address(institute.getAddress())
+                .websiteUrl(institute.getWebsiteUrl())
+                .learnerPortalUrl(institute.getLearnerPortalBaseUrl())
+                .adminPortalUrl(institute.getAdminPortalBaseUrl())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<InstituteSearchProjection> searchInstitute(String searchName) {
+        return instituteRepository.searchByQuery(searchName);
+    }
+
+    /**
+     * Internal: rename an institute (used by the onboarding/demo-management flow in
+     * community-service so a prospect sees the updated branding inside the live demo).
+     * Only non-blank values are applied.
+     */
+    @Transactional
+    public InstituteInfoDTO updateInstituteProfile(String instituteId, String instituteName) {
+        Institute institute = instituteRepository.findById(instituteId)
+                .orElseThrow(() -> new VacademyException("Institute not found"));
+        if (instituteName != null && !instituteName.isBlank()) {
+            institute.setInstituteName(instituteName.trim());
+        }
+        instituteRepository.save(institute);
+        return getInstituteById(instituteId);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, String> getInstituteBranding(String instituteId) {
+        Institute institute = instituteRepository.findById(instituteId)
+                .orElseThrow(() -> new VacademyException("Institute not found"));
+        Map<String, String> branding = new HashMap<>();
+        branding.put("institute_id", institute.getId());
+        branding.put("institute_name", institute.getInstituteName());
+        branding.put("logo_file_id", institute.getLogoFileId());
+        branding.put("institute_theme_code", institute.getInstituteThemeCode());
+        return branding;
+    }
+}

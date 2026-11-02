@@ -1,0 +1,51 @@
+{
+    "login": {
+        "heading": "سعداء بعودتك!",
+        "subheading": "سجّل الدخول وواصل رحلتك التعليمية!",
+        "emailPlaceholder": "you@email.com",
+        "passwordPlaceholder": "كلمة المرور",
+        "forgotPasswordLink": "هل نسيت كلمة المرور؟",
+        "loginButton": "تسجيل الدخول",
+        "forgotPasswordHeading": "نسيت كلمة المرور",
+        "forgotPasswordSubheading": "أدخل بريدك الإلكتروني وسنرسل كلمة المرور إلى صندوق بريدك",
+        "forgotPasswordEmailPlaceholder": "you@email.com",
+        "forgotPasswordButton": "إرسال رابط إعادة التعيين",
+        "forgotPasswordBottomText": "هل تذكرت كلمة المرور؟",
+        "setPasswordHeading": "تعيين كلمة مرور جديدة",
+        "setPasswordSubheading": "أمّن حسابك بكلمة مرور جديدة",
+        "setPasswordNewPlaceholder": "كلمة المرور الجديدة",
+        "setPasswordConfirmPlaceholder": "تأكيد كلمة المرور الجديدة",
+        "setPasswordButton": "إعادة تعيين كلمة المرور",
+        "setPasswordBottomText": "العودة إلى تسجيل الدخول؟"
+    },
+    "profile": {
+        "language": "اللغة",
+        "languageHint": "اختر لغة القوائم والأزرار."
+    },
+    "actions": {
+        "save": "حفظ",
+        "cancel": "إلغاء",
+        "delete": "حذف"
+    },
+    "table": {
+        "noResults": "لا توجد نتائج"
+    },
+    "common": {
+        "loading": "جارٍ التحميل..."
+    },
+    "aiUsageLimit": {
+        "title": "تم بلوغ حد استخدام الذكاء الاصطناعي",
+        "featureFallback": "الذكاء الاصطناعي",
+        "reachedDay": "لقد استهلكت حصة اليوم من {{feature}}.",
+        "reachedWeek": "لقد استهلكت حصة هذا الأسبوع من {{feature}}.",
+        "reachedMonth": "لقد استهلكت حصة هذا الشهر من {{feature}}.",
+        "reachedPlanPeriod": "لقد استهلكت حصتك من {{feature}} لفترة الخطة هذه.",
+        "reached": "لقد بلغت حد الاستخدام لـ {{feature}}.",
+        "numbersCredits": "تم استخدام {{used}} من أصل {{limit}} رصيد.",
+        "numbersRequests": "تم استخدام {{used}} من أصل {{limit}} طلب.",
+        "numbersUsd": "تم استخدام {{used}} من أصل {{limit}}.",
+        "resetsAt": "يمكنك استخدامه مجددًا بعد {{when}}، أو اسأل معلمك.",
+        "tryLater": "حاول مرة أخرى لاحقًا، أو اسأل معلمك.",
+        "warning": "أنت تقترب من حد استخدامك للذكاء الاصطناعي."
+    }
+}

@@ -1,0 +1,250 @@
+apply plugin: 'com.android.application'
+
+// Release signing is read from a gitignored android/keystore.properties so the
+// upload key + passwords never land in git. Falls back to the debug key when the
+// file is absent (e.g. CI or a fresh clone), keeping local debug builds working.
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
+android {
+    namespace "io.vacademy.student.app"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "io.vacademy.student.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // Version info moved to product flavors for flavor-based versioning
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+
+		// Default manifest placeholders (can be overridden per flavor)
+		manifestPlaceholders = [
+			DEEP_LINK_HOST: "learner.vacademy.io"
+		]
+    }
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig keystorePropsFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+	// White-label flavors
+	flavorDimensions "client"
+	productFlavors {
+		ssdc {
+			dimension "client"
+			applicationId "io.vacademy.student.app"
+			// versionCode drives @capgo/capacitor-updater's reset-on-native-update:
+			// cleanupObsoleteVersions() compares it against the stored
+			// LatestNativeBuildVersion and, when it differs, resets to the builtin
+			// bundle and deletes every stored OTA bundle. Bumping it is what stops a
+			// device that already has OTA bundle 2.4.9 from carrying that older JS
+			// over this build's embedded code.
+			versionCode 33
+			// Was 2.4.8 while package.json (the OTA bundle version) said 2.4.9.
+			versionName "2.5.2"
+			// Deep link host for this client
+			manifestPlaceholders.DEEP_LINK_HOST = "learner.vacademy.io"
+		}
+
+		seven_cs {
+			dimension "client"
+			applicationId "com.sevencs.app"
+			versionCode 25
+			versionName "2.1.0"
+			// Change app name for Seven CS
+			resValue "string", "app_name", "The 7Cs"
+			// Set the deep link host for Seven CS (adjust to your domain)
+			manifestPlaceholders.DEEP_LINK_HOST = "7cs.vacademy.io"
+		}
+		fivesep {
+			dimension "client"
+			applicationId "com.fivesep.app"
+			versionCode 12
+			versionName "1.0.8"
+			// Change app name for Fivesep
+			resValue "string", "app_name", "iThinkers by Fivesep"
+			// Set the deep link host for Fivesep (adjust to your domain)
+			manifestPlaceholders.DEEP_LINK_HOST = "practice.ithinkersolympiad.com"
+		}
+		shikshanation {
+			dimension "client"
+			applicationId "com.shikshanation.new.app"
+			versionCode 13
+			versionName "2.5.7"
+			// Change app name for Fivesep
+			resValue "string", "app_name", "Shiksha Nation"
+			// Set the deep link host for Fivesep (adjust to your domain)
+			manifestPlaceholders.DEEP_LINK_HOST = "shiksha-nation.vacademy.io"
+		}
+		enark{
+			dimension "client"
+			applicationId "com.enarkuplift.app"
+			versionCode 9
+			versionName "1.5.4"
+			resValue "string", "app_name", "Uplift Teacher Training"
+			manifestPlaceholders.DEEP_LINK_HOST = "training.enarkuplift.in"
+		}
+		edzumo {
+			dimension "client"
+			applicationId "com.edzumo.app"
+			versionCode 6
+			versionName "1.0.5"
+			resValue "string", "app_name", "Edzumo"
+			manifestPlaceholders.DEEP_LINK_HOST = "workout.edzumo.com"
+		}
+		chanakaya {
+			dimension "client"
+			applicationId "com.chanakayaiasacademy.app"
+			versionCode 6
+			versionName "1.0.5"
+			resValue "string", "app_name", "SADBHAVANA"
+			manifestPlaceholders.DEEP_LINK_HOST = "student-chanakayaiasacademy.vacademy.io"
+		}
+		stemx {
+			dimension "client"
+			applicationId "com.stemx.app"
+			versionCode 7
+			versionName "1.0.6"
+			resValue "string", "app_name", "STEMx Education"
+			manifestPlaceholders.DEEP_LINK_HOST = "learn.stemxindia.com"
+		}
+		elevate {
+			dimension "client"
+			applicationId "com.elevateeducation.app"
+			versionCode 6
+			versionName "1.0.5"
+			resValue "string", "app_name", "Elevate Education"
+			manifestPlaceholders.DEEP_LINK_HOST = "student.elevateeducation.in"
+		}
+		hcca {
+			dimension "client"
+			applicationId "com.hcca.app"
+			versionCode 5
+			versionName "1.0.4"
+			resValue "string", "app_name", "HCCA Learning"
+			manifestPlaceholders.DEEP_LINK_HOST = "learn.hcca.in"
+		}
+		zoe {
+			dimension "client"
+			applicationId "com.zoeedtech.app"
+			// Bumped for the ZOE "Online School" rebrand (new name, launcher icon and
+			// splash). The versionCode bump also forces @capgo/capacitor-updater to
+			// drop any stored OTA bundle and fall back to this build's builtin one.
+			versionCode 4
+			// MUST stay above every OTA bundle this app can be offered (highest
+			// untargeted ANDROID row 2.2.4, plus the ZOE-targeted 2.5.4). A 1.0.x
+			// versionName gets force-dragged onto a bundle cut before ZOE existed in
+			// flavor.config.ts, which loses the institute branding entirely.
+			versionName "2.5.5"
+			resValue "string", "app_name", "ZOE Online School"
+			manifestPlaceholders.DEEP_LINK_HOST = "student.zoeedtech.com"
+		}
+		learningbridge {
+			dimension "client"
+			applicationId "com.learningbridge.app"
+			// vc5 (1.0.4) was built 2026-09-06; this is the next code up.
+			versionCode 6
+			versionName "1.0.5"
+			resValue "string", "app_name", "The Learning Bridge"
+			manifestPlaceholders.DEEP_LINK_HOST = "student.thelearningbridge.uk"
+		}
+		brahmvarchas {
+			dimension "client"
+			applicationId "com.brahmvarchas.app"
+			versionCode 3
+			versionName "1.0.2"
+			resValue "string", "app_name", "Brahm Varchas Shiksha"
+			manifestPlaceholders.DEEP_LINK_HOST = "learning.brahmvarchas.org"
+		}
+		dumbee {
+			dimension "client"
+			applicationId "com.dumbee.app"
+			versionCode 1
+			versionName "1.0.0"
+			resValue "string", "app_name", "DumBee"
+			manifestPlaceholders.DEEP_LINK_HOST = "learner.soullifee.com"
+		}
+		agilore {
+			dimension "client"
+			applicationId "com.agilore.app"
+			versionCode 2
+			versionName "1.0.1"
+			resValue "string", "app_name", "Agilore Global"
+			manifestPlaceholders.DEEP_LINK_HOST = "learner.agilore.com"
+		}
+		oui {
+			dimension "client"
+			applicationId "com.ouiacademie.io"
+			versionCode 2
+			versionName "1.0.1"
+			resValue "string", "app_name", "Oui Académie"
+			manifestPlaceholders.DEEP_LINK_HOST = "student.oui-academie.com"
+		}
+		smartaiacademy {
+			dimension "client"
+			applicationId "com.smartaiacademy.app"
+			// Play automatic protection rejects bundles below minSdk 24.
+			minSdkVersion 24
+			versionCode 2
+			versionName "1.0.1"
+			resValue "string", "app_name", "Smart AI Academy"
+			manifestPlaceholders.DEEP_LINK_HOST = "student.smartaiacademy.co.in"
+		}
+		sreedhar {
+			dimension "client"
+			applicationId "com.sreedhar.app"
+			// Play automatic protection rejects bundles below minSdk 24.
+			minSdkVersion 24
+			versionCode 2
+			versionName "1.0.1"
+			// Apostrophe must stay escaped or AAPT rejects the generated string resource.
+			resValue "string", "app_name", "Sreedhar\\'s TTS"
+			manifestPlaceholders.DEEP_LINK_HOST = "learn.ttsedu.co.in"
+		}
+	}
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+
+    // Firebase Cloud Messaging for push notifications
+    implementation platform('com.google.firebase:firebase-bom:33.2.0')
+    implementation 'com.google.firebase:firebase-messaging'
+}
+
+apply from: 'capacitor.build.gradle'
+apply plugin: 'com.google.gms.google-services'

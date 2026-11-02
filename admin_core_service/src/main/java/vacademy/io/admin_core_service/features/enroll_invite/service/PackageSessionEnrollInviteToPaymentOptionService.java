@@ -1,0 +1,157 @@
+package vacademy.io.admin_core_service.features.enroll_invite.service;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import vacademy.io.admin_core_service.features.common.enums.StatusEnum;
+import vacademy.io.admin_core_service.features.enroll_invite.dto.AssignCpoToPackageSessionDTO;
+import vacademy.io.admin_core_service.features.enroll_invite.entity.EnrollInvite;
+import vacademy.io.admin_core_service.features.enroll_invite.entity.PackageSessionLearnerInvitationToPaymentOption;
+import vacademy.io.admin_core_service.features.enroll_invite.repository.PackageSessionLearnerInvitationToPaymentOptionRepository;
+import vacademy.io.admin_core_service.features.fee_management.entity.ComplexPaymentOption;
+import vacademy.io.admin_core_service.features.fee_management.repository.ComplexPaymentOptionRepository;
+import vacademy.io.admin_core_service.features.user_subscription.entity.PaymentOption;
+import vacademy.io.admin_core_service.features.user_subscription.service.PaymentOptionService;
+import vacademy.io.common.exceptions.VacademyException;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+
+@Service
+public class PackageSessionEnrollInviteToPaymentOptionService {
+
+    @Autowired
+    private PackageSessionLearnerInvitationToPaymentOptionRepository repository;
+
+    @Autowired
+    private ComplexPaymentOptionRepository complexPaymentOptionRepository;
+
+    @Autowired
+    private PaymentOptionService paymentOptionService;
+
+    /**
+     * ADD THIS METHOD BACK
+     * Creates and saves a single mapping entity.
+     * 
+     * @param mapping The entity to save.
+     * @return The saved entity.
+     */
+    public PackageSessionLearnerInvitationToPaymentOption create(
+            PackageSessionLearnerInvitationToPaymentOption mapping) {
+        if (mapping == null)
+            return null;
+        return repository.save(mapping);
+    }
+
+    public void createPackageSessionLearnerInvitationToPaymentOptions(
+            List<PackageSessionLearnerInvitationToPaymentOption> mappings) {
+        if (mappings == null || mappings.isEmpty())
+            return;
+        repository.saveAll(mappings);
+    }
+
+    public List<PackageSessionLearnerInvitationToPaymentOption> findByInvite(EnrollInvite enrollInvite) {
+        if (enrollInvite == null)
+            return Collections.emptyList();
+
+        List<PackageSessionLearnerInvitationToPaymentOption> allMappings = Optional
+                .ofNullable(repository.findByEnrollInviteAndStatusIn(enrollInvite, List.of(StatusEnum.ACTIVE.name())))
+                .orElse(Collections.emptyList());
+
+        // Deduplicate: Group by packageSessionId and keep only the latest by createdAt
+        java.util.Map<String, PackageSessionLearnerInvitationToPaymentOption> latestMappingsMap = allMappings.stream()
+                .filter(m -> m.getPackageSession() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        m -> m.getPackageSession().getId(),
+                        m -> m,
+                        (existing, replacement) -> {
+                            if (existing.getCreatedAt() == null)
+                                return replacement;
+                            if (replacement.getCreatedAt() == null)
+                                return existing;
+                            return existing.getCreatedAt().isAfter(replacement.getCreatedAt()) ? existing : replacement;
+                        }));
+
+        return new java.util.ArrayList<>(latestMappingsMap.values());
+    }
+
+    public List<PackageSessionLearnerInvitationToPaymentOption> findByPaymentOptionIds(List<String> paymentOptionIds) {
+        if (paymentOptionIds == null || paymentOptionIds.isEmpty())
+            return Collections.emptyList();
+
+        return Optional
+                .ofNullable(repository.findByCriteria(paymentOptionIds, List.of(StatusEnum.ACTIVE.name()),
+                        List.of(StatusEnum.ACTIVE.name())))
+                .orElse(Collections.emptyList());
+    }
+
+    public void deleteByEnrollInviteIds(List<String> enrollInviteIds) {
+        if (enrollInviteIds == null || enrollInviteIds.isEmpty())
+            return;
+
+        List<PackageSessionLearnerInvitationToPaymentOption> mappings = Optional
+                .ofNullable(repository.findByEnrollInvite_IdInAndStatusIn(enrollInviteIds,
+                        List.of(StatusEnum.ACTIVE.name())))
+                .orElse(Collections.emptyList());
+
+        for (PackageSessionLearnerInvitationToPaymentOption mapping : mappings) {
+            if (mapping != null) {
+                mapping.setStatus(StatusEnum.DELETED.name());
+            }
+        }
+        repository.saveAll(mappings);
+    }
+
+    public void updateStatusByIds(List<String> ids, String status) {
+        if (ids == null || ids.isEmpty() || status == null)
+            return;
+        repository.updateStatusByIds(ids, status);
+    }
+
+    public List<String> findPackageSessionsOfEnrollInvite(EnrollInvite enrollInvite) {
+        return repository.findPackageSessionIdsByEnrollInviteAndStatusIn(
+                enrollInvite,
+                List.of(StatusEnum.ACTIVE.name()));
+    }
+
+    public PackageSessionLearnerInvitationToPaymentOption updateStatus(String id, String status) {
+        PackageSessionLearnerInvitationToPaymentOption mapping = repository.findById(id).orElseThrow(
+                () -> new VacademyException("PackageSessionLearnerInvitationToPaymentOption not found with id: " + id));
+        mapping.setStatus(status);
+        return mapping;
+    }
+
+    public List<PackageSessionLearnerInvitationToPaymentOption> findByEnrollInviteIdsWithPackageSession(
+            List<String> enrollInviteIds) {
+        if (enrollInviteIds == null || enrollInviteIds.isEmpty())
+            return Collections.emptyList();
+        return repository.findByEnrollInviteIdsAndStatusWithPackageSession(enrollInviteIds,
+                List.of(StatusEnum.ACTIVE.name()));
+    }
+
+    /**
+     * Attaches a CPO to a package-session bridge by resolving the CPO's mirror
+     * PaymentOption (auto-created via FeeManagementService) and setting it on the
+     * bridge's payment_option_id. After V224, this is the only place CPOs are
+     * stamped on the bridge — the previous bridge.cpo_id column is gone.
+     */
+    @Transactional
+    public void assignCpoToPackageSession(String enrollInviteId, AssignCpoToPackageSessionDTO request) {
+        PackageSessionLearnerInvitationToPaymentOption bridge = repository
+                .findActiveByEnrollInviteIdAndPackageSessionId(enrollInviteId, request.getPackageSessionId())
+                .orElseThrow(() -> new VacademyException(
+                        "No active mapping found for enrollInviteId=" + enrollInviteId
+                                + " and packageSessionId=" + request.getPackageSessionId()));
+
+        ComplexPaymentOption cpo = complexPaymentOptionRepository.findById(request.getCpoId())
+                .orElseThrow(() -> new VacademyException("CPO not found: " + request.getCpoId()));
+
+        // Resolve (or self-heal) the mirror PaymentOption for this CPO.
+        PaymentOption mirror = paymentOptionService.findByComplexPaymentOptionId(cpo.getId())
+                .orElseGet(() -> paymentOptionService.findOrCreateMirrorForCpo(cpo));
+
+        bridge.setPaymentOption(mirror);
+        repository.save(bridge);
+    }
+}

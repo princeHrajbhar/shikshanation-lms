@@ -1,0 +1,144 @@
+import { DoubtType, StudentDetailsType } from "../types/add-doubt-type"
+import { getFromStorage } from "@/components/common/auth/login/forms/page/login-form";
+import { useContentStore } from "@/stores/study-library/chapter-sidebar-store";
+import { useAddDoubt } from "../services/AddDoubt";
+import { PaperPlaneRight, CircleNotch } from "@phosphor-icons/react";
+import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import { useMediaRefsStore } from "@/stores/mediaRefsStore";
+import { useEffect, useState } from "react";
+import { getPackageSessionId } from "@/utils/study-library/get-list-from-stores/getPackageSessionId";
+import { MyButton } from "@/components/design-system/button";
+
+interface AddDoubtProps {
+    doubtText: string;
+    refetch: () => void;
+    setDoubt: (doubt: string) => void;
+    setShowInput: (showInput: boolean) => void;
+    timestamp?: number;
+    formattedTime?: string;
+    onPosted?: () => void;
+}
+
+// Quill emits "<p><br></p>" (and &nbsp; for spaces) for an "empty" editor, so a raw
+// `length === 0` check treats a blank editor as having content. Strip tags/entities and
+// trim to decide whether there is anything real to submit.
+const isDoubtTextEmpty = (html: string) =>
+    (html || "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().length === 0;
+
+export const AddDoubt = ({
+    doubtText,
+    refetch,
+    setDoubt,
+    setShowInput,
+    timestamp,
+    onPosted,
+}: AddDoubtProps) => {
+
+    const { t } = useTranslation("studyContent");
+    const {activeItem, currentPackageSessionId} = useContentStore();
+    const addDoubt = useAddDoubt()
+    const { currentPdfPage, currentYoutubeTime, currentUploadedVideoTime } = useMediaRefsStore();
+    const [fallbackPackageSessionId, setFallbackPackageSessionId] = useState<string | null>(null);
+
+    // Prefer the package session of the course currently being viewed (set from
+    // the route's sessionId). Only fall back to the learner's stored default
+    // enrollment if that isn't available, so multi-course learners no longer
+    // get their doubt filed under the wrong course.
+    useEffect(() => {
+        if (currentPackageSessionId) return;
+        let active = true;
+        getPackageSessionId().then((id) => {
+            if (active) setFallbackPackageSessionId(id);
+        });
+        return () => {
+            active = false;
+        };
+    }, [currentPackageSessionId]);
+
+    const packageSessionId = currentPackageSessionId || fallbackPackageSessionId;
+
+    const progressMarker = (() => {
+        // If timestamp is provided, use it
+        if (timestamp !== undefined) {
+            return timestamp;
+        }
+
+        // Otherwise use current position
+        switch(activeItem?.source_type){
+            case "DOCUMENT":
+                return currentPdfPage;
+            case "VIDEO":
+                switch(activeItem.video_slide?.source_type){
+                case "FILE_ID":
+                    return currentUploadedVideoTime*1000;
+                default:
+                    return currentYoutubeTime*1000;
+                }
+            default:
+                return null;
+        }
+    })();
+
+    const handleAddDoubt = async () => {
+        // Guard against double-submit: a second click while the first request is still in
+        // flight would create a duplicate doubt (and could reset the composer mid-way, which
+        // reads as "can't submit another doubt"). React Query's isPending also drives the
+        // disabled + spinner UI below so the learner gets clear feedback.
+        if (addDoubt.isPending) return;
+        if (isDoubtTextEmpty(doubtText)) return;
+
+        const studentDetails = await getFromStorage("StudentDetails");
+        const studentDetailsData: StudentDetailsType = JSON.parse(studentDetails || "{}");
+        const doubtData: DoubtType = {
+            user_id: studentDetailsData.user_id,
+            name: studentDetailsData.full_name,
+            source: "SLIDE",
+            source_id: activeItem?.id || "",
+            type: "DOUBT",
+            institute_id: studentDetailsData.institute_id,
+            raised_time: new Date().toISOString(),
+            resolved_time: null,
+            content_position: String(progressMarker),
+            content_type: (activeItem?.source_type=="DOCUMENT" ? activeItem.document_slide?.type : activeItem?.source_type || "") as string,
+            html_text: doubtText,
+            status: "ACTIVE",
+            parent_id: null,
+            parent_level: 0,
+            doubt_assignee_request_user_ids: [],
+            batch_id: packageSessionId || "",
+        }
+
+        addDoubt.mutate(doubtData, {
+            onSuccess: () => {
+                if (setDoubt && setShowInput && refetch) {
+                    setDoubt("")
+                    setShowInput(false)
+                    refetch()
+                }
+                onPosted?.()
+            },
+            onError: () => {
+                toast.error(t("doubts.errorAdding"))
+            }
+        })
+    }
+
+    const isDisabled = addDoubt.isPending || isDoubtTextEmpty(doubtText);
+
+    return (
+        <MyButton
+            buttonType="primary"
+            scale="medium"
+            onClick={handleAddDoubt}
+            disable={isDisabled}
+            aria-busy={addDoubt.isPending}
+            className="min-w-0 flex-1 gap-1.5 rounded-lg"
+        >
+            {addDoubt.isPending
+                ? <CircleNotch size={16} className="animate-spin" />
+                : <PaperPlaneRight size={16} className="rtl:-scale-x-100" />}
+            {addDoubt.isPending ? t("doubts.posting") : t("doubts.post")}
+        </MyButton>
+    )
+}

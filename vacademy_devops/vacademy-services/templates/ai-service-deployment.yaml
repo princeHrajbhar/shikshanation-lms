@@ -1,0 +1,110 @@
+{{- if .Values.services.ai_service.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+  namespace: default
+  labels:
+    app: ai-service
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    # Image is ~1.5 GB and Whisper / image-gen libs spike CPU at startup.
+    # Running old + new pods simultaneously (the global default surge=1) saturated
+    # the node during a rollout and tripped TaintManagerEviction on neighbours.
+    # Kill the old pod first; brief downtime is the right trade for single-replica.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+    spec:
+      # Graceful drain of in-flight AI-video runs: preStop hands them back as
+      # "interrupted" (resumed at once by the replacement pod), then uvicorn
+      # gets --timeout-graceful-shutdown 60. Mirrors the CI patch in
+      # .github/workflows/docker-publish-ai-service.yml (CI does not run helm).
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: ai-service
+          image: "{{ .Values.services.ai_service.image.repository }}:{{ .Values.services.ai_service.image.tag }}"
+          imagePullPolicy: Always
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - python
+                  - -c
+                  - >-
+                    import os,urllib.request as u;u.urlopen(u.Request("http://127.0.0.1:{{ .Values.services.ai_service.port }}/ai-service/internal/ai-video/v1/drain?wait_s=20",method="POST",headers={"X-Internal-Service-Token":os.environ.get("INTERNAL_SERVICE_TOKEN","")}),timeout=45)
+          envFrom:
+            - configMapRef:
+                name: myconfigmapv1.0
+            - secretRef:
+                name: vacademy-secrets
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: WHISPER_CPU_THREADS
+              value: "{{ .Values.services.ai_service.whisper.cpuThreads | default "2" }}"
+            - name: WHISPER_NUM_WORKERS
+              value: "{{ .Values.services.ai_service.whisper.numWorkers | default "1" }}"
+            {{- if .Values.services.ai_service.whisper.modelSize }}
+            - name: WHISPER_MODEL_SIZE
+              value: "{{ .Values.services.ai_service.whisper.modelSize }}"
+            {{- end }}
+          resources:
+            {{- if .Values.services.ai_service.resources }}
+            {{- toYaml .Values.services.ai_service.resources | nindent 12 }}
+            {{- else }}
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1500m"
+              memory: "3Gi"
+            {{- end }}
+          # See PR #1847 era — startupProbe at initialDelaySeconds=30 lets the rollout
+          # complete in ~2-3 min instead of waiting 5 min before the first probe even fires.
+          # liveness/readiness initialDelay=0 is safe because k8s won't run them until
+          # startupProbe succeeds; failureThreshold=60 × periodSeconds=30 = 30 min grace.
+          startupProbe:
+            httpGet:
+              path: /ai-service/health
+              port: {{ .Values.services.ai_service.port }}
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 60
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /ai-service/health
+              port: {{ .Values.services.ai_service.port }}
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 5
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: /ai-service/health
+              port: {{ .Values.services.ai_service.port }}
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 5
+            successThreshold: 1
+          ports:
+            - containerPort: {{ .Values.services.ai_service.port }}
+{{- end }}

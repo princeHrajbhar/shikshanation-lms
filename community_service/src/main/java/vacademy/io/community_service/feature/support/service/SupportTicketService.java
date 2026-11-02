@@ -1,0 +1,857 @@
+package vacademy.io.community_service.feature.support.service;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
+import vacademy.io.common.auth.model.CustomUserDetails;
+import vacademy.io.community_service.feature.support.dto.AddMessageRequest;
+import vacademy.io.community_service.feature.support.dto.AssignEngineerRequest;
+import vacademy.io.community_service.feature.support.dto.AttachmentDto;
+import vacademy.io.community_service.feature.support.dto.CreateSupportTicketRequest;
+import vacademy.io.community_service.feature.support.dto.CreateTicketRequest;
+import vacademy.io.community_service.feature.support.dto.PageResponseDto;
+import vacademy.io.community_service.feature.support.dto.SupportTicketDto;
+import vacademy.io.community_service.feature.support.dto.SupportTicketMessageDto;
+import vacademy.io.community_service.feature.support.dto.UpdateTicketRequest;
+import vacademy.io.community_service.feature.support.dto.UpdateTicketStatusRequest;
+import vacademy.io.community_service.feature.support.entity.SupportEngineer;
+import vacademy.io.community_service.feature.support.entity.SupportTicket;
+import vacademy.io.community_service.feature.support.entity.SupportTicketMessage;
+import vacademy.io.community_service.feature.support.enums.SenderType;
+import vacademy.io.community_service.feature.support.enums.SupportPlan;
+import vacademy.io.community_service.feature.support.enums.TicketCategory;
+import vacademy.io.community_service.feature.support.enums.TicketPriority;
+import vacademy.io.community_service.feature.support.enums.TicketSource;
+import vacademy.io.community_service.feature.support.enums.TicketStatus;
+import vacademy.io.community_service.feature.support.repository.SupportTicketMessageRepository;
+import vacademy.io.community_service.feature.support.repository.SupportTicketRepository;
+
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+@Service
+@Slf4j
+public class SupportTicketService {
+
+    private static final long HOUR_MS = 3_600_000L;
+    private static final int MAX_ATTACHMENTS = 10;
+    private static final int MAX_ATTACHMENT_FIELD_LEN = 2048;
+    private static final int MAX_CONTEXT_KEYS = 50;
+    private static final int MAX_CONTEXT_JSON_LEN = 16384;
+    private static final TypeReference<List<AttachmentDto>> ATTACHMENT_LIST = new TypeReference<>() {
+    };
+    /** Stand-in for a disabled date bound — the query's boolean flag makes it unreachable. */
+    private static final Date DATE_SENTINEL = new Date(0L);
+
+    @Autowired
+    private SupportTicketRepository ticketRepository;
+    @Autowired
+    private SupportTicketMessageRepository messageRepository;
+    @Autowired
+    private SupportConfigService configService;
+    @Autowired
+    private SupportEngineerService engineerService;
+    @Autowired
+    private SupportAlertService alertService;
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    // ============================ INSTITUTE (ADMIN) ============================
+
+    @Transactional
+    public SupportTicketDto createTicket(String instituteId, String instituteName, String raiserUserId,
+                                         String raiserName, String raiserEmail, String raisedByRole,
+                                         Map<String, Object> clientContext, CreateTicketRequest request) {
+        if (request == null || !StringUtils.hasText(request.getSubject())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "subject is required");
+        }
+        if (!StringUtils.hasText(request.getMessage())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message is required");
+        }
+
+        SupportPlan plan = configService.resolvePlan(instituteId);
+        TicketPriority priority = TicketPriority.fromName(request.getPriority(), TicketPriority.MINOR);
+        TicketCategory category = TicketCategory.fromName(request.getCategory(), TicketCategory.QUESTION);
+        Date now = new Date();
+
+        SupportTicket ticket = SupportTicket.builder()
+                .instituteId(instituteId)
+                .instituteName(instituteName)
+                .raisedByUserId(raiserUserId)
+                .raisedByName(raiserName)
+                .raisedByEmail(raiserEmail)
+                .raisedByRole(raisedByRole)
+                .ticketNumber(allocateTicketNumber())
+                .subject(request.getSubject().trim())
+                .category(category)
+                .priority(priority)
+                .status(TicketStatus.OPEN)
+                .planAtCreation(plan)
+                .source(TicketSource.PORTAL)
+                .firstResponseDueAt(computeDue(now, plan, priority))
+                .lastMessageAt(now)
+                .messageCount(1)
+                .clientContext(writeClientContext(clientContext))
+                .build();
+        ticket = ticketRepository.save(ticket);
+
+        SupportTicketMessage first = SupportTicketMessage.builder()
+                .ticketId(ticket.getId())
+                .senderType(SenderType.CUSTOMER)
+                .senderUserId(ticket.getRaisedByUserId())
+                .senderName(ticket.getRaisedByName())
+                .body(request.getMessage().trim())
+                .attachments(writeAttachments(request.getAttachments()))
+                .internalNote(false)
+                .build();
+        messageRepository.save(first);
+
+        alertService.onNewTicket(ticket, request.getMessage().trim(),
+                configService.resolveAlertEmails(instituteId));
+
+        return toDetailDto(ticket, false);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponseDto<SupportTicketDto> listForInstitute(String instituteId, String statusFilter,
+                                                              Pageable pageable) {
+        TicketStatus status = TicketStatus.fromName(statusFilter, null);
+        Page<SupportTicket> page = (status == null)
+                ? ticketRepository.findByInstituteIdAndInternalOnlyFalseOrderByLastMessageAtDesc(
+                        instituteId, pageable)
+                : ticketRepository.findByInstituteIdAndStatusAndInternalOnlyFalseOrderByLastMessageAtDesc(
+                        instituteId, status, pageable);
+        Map<String, String> names = engineerNames(page);
+        return PageResponseDto.of(page, t -> toSummaryDto(t, names));
+    }
+
+    @Transactional(readOnly = true)
+    public SupportTicketDto getForInstitute(String instituteId, String ticketId) {
+        SupportTicket ticket = getOrThrow(ticketId);
+        requireInstitute(ticket, instituteId);
+        return toDetailDto(ticket, false);
+    }
+
+    @Transactional
+    public SupportTicketDto addCustomerMessage(String instituteId, String ticketId, CustomUserDetails user,
+                                               AddMessageRequest request) {
+        SupportTicket ticket = getOrThrow(ticketId);
+        requireInstitute(ticket, instituteId);
+        // A screenshot on its own is a legitimate reply, so text is only required when nothing is attached.
+        String body = requireBodyOrAttachments(request);
+        Date now = new Date();
+
+        SupportTicketMessage message = SupportTicketMessage.builder()
+                .ticketId(ticket.getId())
+                .senderType(SenderType.CUSTOMER)
+                .senderUserId(user != null ? user.getUserId() : ticket.getRaisedByUserId())
+                .senderName(user != null ? user.getFullName() : ticket.getRaisedByName())
+                .body(body)
+                .attachments(writeAttachments(request.getAttachments()))
+                .internalNote(false)
+                .build();
+        messageRepository.save(message);
+
+        // A customer reply reopens a closed ticket and brings a waiting ticket back to us.
+        if (ticket.getStatus().isTerminal()) {
+            ticket.setStatus(TicketStatus.OPEN);
+            ticket.setResolvedAt(null);
+        } else if (ticket.getStatus() == TicketStatus.WAITING_ON_CUSTOMER) {
+            ticket.setStatus(TicketStatus.IN_PROGRESS);
+        }
+        ticket.setLastMessageAt(now);
+        ticket.setMessageCount(ticket.getMessageCount() + 1);
+        ticketRepository.save(ticket);
+
+        alertService.onCustomerReply(ticket, alertBody(body, request.getAttachments()),
+                message.getSenderName(), configService.resolveAlertEmails(instituteId));
+
+        return toDetailDto(ticket, false);
+    }
+
+    @Transactional
+    public SupportTicketDto setStatusByCustomer(String instituteId, String ticketId, String statusFilter) {
+        SupportTicket ticket = getOrThrow(ticketId);
+        requireInstitute(ticket, instituteId);
+        TicketStatus target = TicketStatus.fromName(statusFilter, null);
+        // Customers may only resolve/close or reopen their own ticket.
+        if (target != TicketStatus.RESOLVED && target != TicketStatus.CLOSED && target != TicketStatus.OPEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported status change");
+        }
+        applyStatus(ticket, target);
+        ticketRepository.save(ticket);
+        return toDetailDto(ticket, false);
+    }
+
+    // ============================== SUPER-ADMIN ===============================
+
+    /**
+     * The support team logs a ticket on an institute's behalf (issue reported over email / WhatsApp,
+     * etc.). Attributed to "Vacademy Support" but attached to the chosen institute, so it surfaces in
+     * that institute's own support panel like any client-raised ticket. The opening message is a
+     * visible SUPPORT message carrying the reported issue text; because support is already engaged we
+     * stamp firstRespondedAt so it is never flagged overdue against a first-response SLA.
+     */
+    @Transactional
+    public SupportTicketDto createBySupport(CreateSupportTicketRequest request, CustomUserDetails user) {
+        if (request == null || !StringUtils.hasText(request.getInstituteId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "instituteId is required");
+        }
+        if (!StringUtils.hasText(request.getSubject())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "subject is required");
+        }
+        if (!StringUtils.hasText(request.getMessage())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message is required");
+        }
+        String instituteId = request.getInstituteId().trim();
+        SupportPlan plan = configService.resolvePlan(instituteId);
+        TicketPriority priority = TicketPriority.fromName(request.getPriority(), TicketPriority.MINOR);
+        TicketCategory category = TicketCategory.fromName(request.getCategory(), TicketCategory.QUESTION);
+        TicketSource source = TicketSource.fromName(request.getSource(), TicketSource.MANUAL);
+        Date now = new Date();
+
+        String engineerId = null;
+        if (StringUtils.hasText(request.getAssignedEngineerId())) {
+            engineerId = engineerService.getOrThrow(request.getAssignedEngineerId().trim()).getId();
+        }
+
+        // When support records who actually reported the issue, the ticket belongs to that person:
+        // they are shown as the raiser and are the sole recipient of reply notifications. Without
+        // a reporter the fields describe the support agent, and replies notify nobody.
+        boolean hasReporter = StringUtils.hasText(request.getReportedByEmail())
+                || StringUtils.hasText(request.getReportedByUserId());
+
+        SupportTicket ticket = SupportTicket.builder()
+                .instituteId(instituteId)
+                .instituteName(StringUtils.hasText(request.getInstituteName()) ? request.getInstituteName().trim() : null)
+                .raisedByUserId(hasReporter ? trimToNull(request.getReportedByUserId())
+                        : (user != null ? user.getUserId() : null))
+                .raisedByName(hasReporter ? trimToNull(request.getReportedByName()) : "Vacademy Support")
+                .raisedByEmail(hasReporter ? trimToNull(request.getReportedByEmail()) : null)
+                .raisedByRole(hasReporter ? "ADMIN" : "SUPPORT")
+                .ticketNumber(allocateTicketNumber())
+                .subject(request.getSubject().trim())
+                .category(category)
+                .priority(priority)
+                .status(TicketStatus.OPEN)
+                .planAtCreation(plan)
+                .source(source)
+                .eta(request.getEta())
+                .internalOnly(Boolean.TRUE.equals(request.getInternalOnly()))
+                .assignedEngineerId(engineerId)
+                // support authored the first message → treat first response as already given (no SLA clock).
+                .firstRespondedAt(now)
+                .lastMessageAt(now)
+                .messageCount(1)
+                .build();
+        ticket = ticketRepository.save(ticket);
+
+        SupportTicketMessage first = SupportTicketMessage.builder()
+                .ticketId(ticket.getId())
+                .senderType(SenderType.SUPPORT)
+                .senderUserId(user != null ? user.getUserId() : null)
+                .senderName(user != null && StringUtils.hasText(user.getFullName()) ? user.getFullName() : "Vacademy Support")
+                .body(request.getMessage().trim())
+                .attachments(writeAttachments(request.getAttachments()))
+                .internalNote(false)
+                .build();
+        messageRepository.save(first);
+
+        return toDetailDto(ticket, true);
+    }
+
+    @Transactional
+    public SupportTicketDto setEta(String ticketId, Date eta) {
+        SupportTicket ticket = getOrThrow(ticketId);
+        ticket.setEta(eta);
+        ticketRepository.save(ticket);
+        return toDetailDto(ticket, true);
+    }
+
+    /**
+     * Edit an existing ticket from the support console. Only non-null fields are applied.
+     * {@code message}/{@code attachments} edit the ticket's opening message in place.
+     */
+    @Transactional
+    public SupportTicketDto updateTicket(String ticketId, UpdateTicketRequest request) {
+        SupportTicket ticket = getOrThrow(ticketId);
+        if (request == null) {
+            return toDetailDto(ticket, true);
+        }
+
+        if (StringUtils.hasText(request.getSubject())) {
+            ticket.setSubject(request.getSubject().trim());
+        }
+        if (StringUtils.hasText(request.getCategory())) {
+            ticket.setCategory(TicketCategory.fromName(request.getCategory(), ticket.getCategory()));
+        }
+        if (StringUtils.hasText(request.getSource())) {
+            ticket.setSource(TicketSource.fromName(request.getSource(), ticket.getSource()));
+        }
+        if (StringUtils.hasText(request.getPriority())) {
+            TicketPriority newPriority = TicketPriority.fromName(request.getPriority(), ticket.getPriority());
+            ticket.setPriority(newPriority);
+            // Re-derive the response-due time while we still owe a first response.
+            if (ticket.getFirstRespondedAt() == null && ticket.getPlanAtCreation() != null
+                    && ticket.getCreatedAt() != null) {
+                ticket.setFirstResponseDueAt(
+                        computeDue(ticket.getCreatedAt(), ticket.getPlanAtCreation(), newPriority));
+            }
+        }
+        boolean justResolved = false;
+        if (StringUtils.hasText(request.getStatus())) {
+            justResolved = applyStatus(ticket, TicketStatus.fromName(request.getStatus(), ticket.getStatus()));
+        }
+        if (request.getAssignedEngineerId() != null) {
+            if (StringUtils.hasText(request.getAssignedEngineerId())) {
+                ticket.setAssignedEngineerId(
+                        engineerService.getOrThrow(request.getAssignedEngineerId().trim()).getId());
+            } else {
+                ticket.setAssignedEngineerId(null);
+            }
+        }
+        if (request.getInternalOnly() != null) {
+            ticket.setInternalOnly(request.getInternalOnly());
+        }
+        if (request.isEtaSet()) {
+            ticket.setEta(request.getEta());
+        }
+        if (request.isReportedBySet()) {
+            // Attributing a ticket to a real institute contact also makes it notifiable; clearing
+            // the reporter hands it back to support and silences reply notifications.
+            String email = trimToNull(request.getReportedByEmail());
+            String reporterId = trimToNull(request.getReportedByUserId());
+            boolean hasReporter = email != null || reporterId != null;
+            // A client-raised ticket's raiser is a recorded fact, not an attribution choice —
+            // clearing it would destroy who actually opened the ticket and silence their
+            // notifications for good. Only support-logged tickets may be re-attributed to nobody.
+            boolean clearingClientRaised = !hasReporter && ticket.getSource() == TicketSource.PORTAL;
+            if (clearingClientRaised) {
+                log.warn("Refusing to clear the raiser on client-raised ticket {}", ticket.getId());
+            } else {
+                ticket.setRaisedByUserId(reporterId);
+                ticket.setRaisedByEmail(email);
+                ticket.setRaisedByName(hasReporter ? trimToNull(request.getReportedByName()) : "Vacademy Support");
+                ticket.setRaisedByRole(hasReporter ? "ADMIN" : "SUPPORT");
+            }
+        }
+        ticketRepository.save(ticket);
+        if (justResolved) {
+            alertService.onTicketResolved(ticket, null, "Vacademy Support");
+        }
+
+        boolean editMessage = StringUtils.hasText(request.getMessage()) || request.isAttachmentsSet();
+        if (editMessage) {
+            messageRepository.findFirstByTicketIdOrderByCreatedAtAsc(ticket.getId()).ifPresent(first -> {
+                if (StringUtils.hasText(request.getMessage())) {
+                    first.setBody(request.getMessage().trim());
+                }
+                if (request.isAttachmentsSet()) {
+                    first.setAttachments(writeAttachments(request.getAttachments()));
+                }
+                messageRepository.save(first);
+            });
+        }
+        return toDetailDto(ticket, true);
+    }
+
+    /**
+     * @param instituteIds filter to these institutes; null/empty means "all institutes".
+     * @param unassigned   when true, only tickets with no assigned engineer (overrides engineerId).
+     * @param searchTerm   case-insensitive substring match on the subject; null/blank skips it.
+     */
+    @Transactional(readOnly = true)
+    public PageResponseDto<SupportTicketDto> search(Collection<String> instituteIds, String statusFilter,
+                                                    String engineerId, boolean unassigned, String searchTerm,
+                                                    String createdFrom, String createdTo,
+                                                    boolean onlyOverdue, Pageable pageable) {
+        TicketStatus status = TicketStatus.fromName(statusFilter, null);
+        List<String> institutes = instituteIds == null ? List.of() : instituteIds.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .collect(Collectors.toList());
+        Date from = parseInstant(createdFrom, "createdFrom");
+        Date to = parseInstant(createdTo, "createdTo");
+        if (from != null && to != null && from.after(to)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "createdFrom must not be after createdTo");
+        }
+        Page<SupportTicket> page = ticketRepository.searchTickets(
+                !institutes.isEmpty(),
+                // Never bind an empty IN list; the sentinel is unreachable when hasInstitutes=false.
+                institutes.isEmpty() ? List.of("__none__") : institutes,
+                status,
+                // "Unassigned" and "assigned to X" are mutually exclusive; unassigned wins.
+                (unassigned || !StringUtils.hasText(engineerId)) ? null : engineerId,
+                unassigned,
+                likeParam(searchTerm),
+                // Never bind a null Date: an untyped NULL bind makes Postgres reject the statement.
+                // The sentinel is unreachable when its flag is false.
+                from != null,
+                from != null ? from : DATE_SENTINEL,
+                to != null,
+                to != null ? to : DATE_SENTINEL,
+                onlyOverdue,
+                new Date(),
+                pageable);
+        Map<String, String> names = engineerNames(page);
+        return PageResponseDto.of(page, t -> toSummaryDto(t, names));
+    }
+
+    /**
+     * Entity properties the inbox/board may sort on. Sorting is driven by a client-supplied string,
+     * so it must never reach {@link Sort} unchecked — an arbitrary property path is a JPQL injection
+     * point and leaks schema shape through the resulting error messages.
+     */
+    private static final Map<String, String> SORTABLE = Map.of(
+            "lastMessageAt", "lastMessageAt",
+            "createdAt", "createdAt",
+            "updatedAt", "updatedAt",
+            "firstResponseDueAt", "firstResponseDueAt");
+
+    private static final String DEFAULT_SORT = "lastMessageAt";
+
+    /**
+     * Build the inbox page request. Defaults to newest activity first — without an explicit ORDER BY
+     * Postgres returns rows in whatever order it likes, which is what made the console look unsorted.
+     * {@code id} breaks ties so pagination stays stable across pages.
+     *
+     * <p>Null handling is deliberately not set here: Spring Data's {@code QueryUtils} applies a
+     * Sort's direction but drops its null handling for {@code @Query} methods, so
+     * {@code nullsLast()} would be a silent no-op. Postgres then sorts NULLs first on DESC, which
+     * would pin a null-{@code lastMessageAt} ticket above every real conversation — V37 backfills
+     * that column instead. {@code firstResponseDueAt} is legitimately null for no-SLA plans, but is
+     * only offered ascending ("due soonest"), where Postgres already puts NULLs last.
+     */
+    public Pageable buildPageable(int page, int size, String sortBy, String sortDirection) {
+        String property = SORTABLE.getOrDefault(sortBy == null ? "" : sortBy.trim(), DEFAULT_SORT);
+        Sort.Direction direction = "ASC".equalsIgnoreCase(sortDirection)
+                ? Sort.Direction.ASC : Sort.Direction.DESC;
+        Sort sort = Sort.by(direction, property).and(Sort.by(Sort.Direction.DESC, "id"));
+        return PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100), sort);
+    }
+
+    /**
+     * Validate a reply and return its trimmed body. A message must carry text or at least one
+     * attachment — an entirely empty message is still rejected. Returns "" for attachment-only
+     * replies; the column is NOT NULL, so an empty string is the correct stored value.
+     */
+    private String requireBodyOrAttachments(AddMessageRequest request) {
+        String body = (request == null || request.getBody() == null) ? "" : request.getBody().trim();
+        // Mirror sanitizeAttachments, which keeps only non-null entries — a list of nulls is empty
+        // once stored, so treating it as "has attachments" would persist a blank message.
+        boolean hasAttachments = request != null && request.getAttachments() != null
+                && request.getAttachments().stream().anyMatch(Objects::nonNull);
+        if (body.isEmpty() && !hasAttachments) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "body or attachments are required");
+        }
+        return body;
+    }
+
+    /** Notification e-mails need something to show when the reply is attachments only. */
+    private String alertBody(String body, List<AttachmentDto> attachments) {
+        if (StringUtils.hasText(body)) {
+            return body;
+        }
+        int count = attachments == null ? 0 : attachments.size();
+        return count == 1 ? "(sent an attachment)" : "(sent " + count + " attachments)";
+    }
+
+    /**
+     * Allocate the next human-facing reference, e.g. VAC-001 … VAC-999, VAC-1000.
+     *
+     * <p>Zero-padded to three digits and then allowed to grow — {@code %03d} pads to a minimum
+     * width and never truncates, so 1000 formats as "1000", not "100". Best-effort: a ticket
+     * without a number is still a usable ticket, so a sequence hiccup must not fail creation.
+     */
+    private String allocateTicketNumber() {
+        try {
+            Long next = ticketRepository.nextTicketNumber();
+            return next == null ? null : String.format("VAC-%03d", next);
+        } catch (Exception e) {
+            log.error("Could not allocate a ticket number: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** Trimmed value, or null when blank — keeps empty strings out of the raisedBy* columns. */
+    private String trimToNull(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    /** Parse an ISO-8601 instant (e.g. {@code 2026-08-05T00:00:00.000Z}); blank means "no bound". */
+    private Date parseInstant(String value, String field) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            return Date.from(Instant.parse(value.trim()));
+        } catch (DateTimeParseException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    field + " must be an ISO-8601 instant, e.g. 2026-08-05T00:00:00Z");
+        }
+    }
+
+    /**
+     * Build the bind value for a case-insensitive "contains" LIKE. Escapes the LIKE wildcards so a
+     * literal % or _ typed into the search box matches itself instead of acting as a wildcard.
+     */
+    private String likeParam(String term) {
+        if (!StringUtils.hasText(term)) {
+            return null;
+        }
+        String escaped = term.trim().toLowerCase()
+                .replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
+        return "%" + escaped + "%";
+    }
+
+    @Transactional(readOnly = true)
+    public SupportTicketDto getByIdForSupport(String ticketId) {
+        return toDetailDto(getOrThrow(ticketId), true);
+    }
+
+    @Transactional
+    public SupportTicketDto addSupportMessage(String ticketId, CustomUserDetails user, AddMessageRequest request) {
+        SupportTicket ticket = getOrThrow(ticketId);
+        // A screenshot on its own is a legitimate reply, so text is only required when nothing is attached.
+        String body = requireBodyOrAttachments(request);
+        boolean internal = request.isInternalNote();
+        Date now = new Date();
+
+        SupportTicketMessage message = SupportTicketMessage.builder()
+                .ticketId(ticket.getId())
+                .senderType(SenderType.SUPPORT)
+                .senderUserId(user != null ? user.getUserId() : null)
+                .senderName(user != null ? user.getFullName() : "Support")
+                .body(body)
+                .attachments(writeAttachments(request.getAttachments()))
+                .internalNote(internal)
+                .build();
+        messageRepository.save(message);
+
+        if (!internal) {
+            if (ticket.getFirstRespondedAt() == null) {
+                ticket.setFirstRespondedAt(now);
+            }
+            // Customer-facing reply: the ball is now in the customer's court (or reopens a closed one).
+            ticket.setStatus(ticket.getStatus().isTerminal()
+                    ? TicketStatus.IN_PROGRESS : TicketStatus.WAITING_ON_CUSTOMER);
+            ticket.setResolvedAt(null);
+            ticket.setLastMessageAt(now);
+            ticket.setMessageCount(ticket.getMessageCount() + 1);
+            ticketRepository.save(ticket);
+            alertService.onSupportReply(ticket, alertBody(body, request.getAttachments()),
+                    user != null ? user.getUserId() : null,
+                    user != null ? user.getFullName() : "Vacademy Support");
+        } else {
+            ticketRepository.save(ticket); // touch updated_at only
+        }
+        return toDetailDto(ticket, true);
+    }
+
+    @Transactional
+    public SupportTicketDto assignEngineer(String ticketId, AssignEngineerRequest request) {
+        SupportTicket ticket = getOrThrow(ticketId);
+        if (request != null && StringUtils.hasText(request.getEngineerId())) {
+            SupportEngineer engineer = engineerService.getOrThrow(request.getEngineerId().trim());
+            ticket.setAssignedEngineerId(engineer.getId());
+        } else {
+            ticket.setAssignedEngineerId(null);
+        }
+        boolean justResolved = false;
+        if (request != null && StringUtils.hasText(request.getStatus())) {
+            justResolved = applyStatus(ticket, TicketStatus.fromName(request.getStatus(), ticket.getStatus()));
+        }
+        ticketRepository.save(ticket);
+        if (justResolved) {
+            alertService.onTicketResolved(ticket, null, "Vacademy Support");
+        }
+        return toDetailDto(ticket, true);
+    }
+
+    @Transactional
+    public SupportTicketDto updateStatus(String ticketId, UpdateTicketStatusRequest request) {
+        SupportTicket ticket = getOrThrow(ticketId);
+        if (request == null) {
+            return toDetailDto(ticket, true);
+        }
+        if (StringUtils.hasText(request.getPriority())) {
+            TicketPriority newPriority = TicketPriority.fromName(request.getPriority(), ticket.getPriority());
+            ticket.setPriority(newPriority);
+            // Re-derive the response-due time while we still owe a first response.
+            if (ticket.getFirstRespondedAt() == null && ticket.getPlanAtCreation() != null && ticket.getCreatedAt() != null) {
+                ticket.setFirstResponseDueAt(computeDue(ticket.getCreatedAt(), ticket.getPlanAtCreation(), newPriority));
+            }
+        }
+        boolean justResolved = false;
+        if (StringUtils.hasText(request.getStatus())) {
+            justResolved = applyStatus(ticket, TicketStatus.fromName(request.getStatus(), ticket.getStatus()));
+        }
+        ticketRepository.save(ticket);
+        // After the save, so a failed notification cannot roll back the status change.
+        if (justResolved) {
+            alertService.onTicketResolved(ticket, null, "Vacademy Support");
+        }
+        return toDetailDto(ticket, true);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Long> inboxCounts() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        counts.put("open", ticketRepository.countByStatus(TicketStatus.OPEN));
+        counts.put("inProgress", ticketRepository.countByStatus(TicketStatus.IN_PROGRESS));
+        counts.put("waitingOnCustomer", ticketRepository.countByStatus(TicketStatus.WAITING_ON_CUSTOMER));
+        counts.put("active", ticketRepository.countByStatusIn(SupportConfigService.ACTIVE_STATUSES));
+        counts.put("overdue", ticketRepository.countOverdue(new Date()));
+        return counts;
+    }
+
+    // ============================== INTERNALS =================================
+
+    private SupportTicket getOrThrow(String ticketId) {
+        return ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found: " + ticketId));
+    }
+
+    private void requireInstitute(SupportTicket ticket, String instituteId) {
+        if (instituteId == null || !instituteId.equals(ticket.getInstituteId())) {
+            // Do not reveal that the ticket exists for another institute.
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found");
+        }
+    }
+
+    /**
+     * @return true when this call moved the ticket from a live state into a terminal one — the
+     *         moment worth telling the raiser about. Returns false for terminal → terminal
+     *         (RESOLVED → CLOSED), so tidying up a ticket does not email them a second time.
+     *         Callers on the customer's own path must ignore it: nobody wants an email about
+     *         their own click.
+     */
+    private boolean applyStatus(SupportTicket ticket, TicketStatus newStatus) {
+        if (newStatus == null) {
+            return false;
+        }
+        boolean wasTerminal = ticket.getStatus() != null && ticket.getStatus().isTerminal();
+        ticket.setStatus(newStatus);
+        if (newStatus.isTerminal()) {
+            if (ticket.getResolvedAt() == null) {
+                ticket.setResolvedAt(new Date());
+            }
+        } else {
+            ticket.setResolvedAt(null);
+        }
+        return !wasTerminal && newStatus.isTerminal();
+    }
+
+    private Date computeDue(Date from, SupportPlan plan, TicketPriority priority) {
+        if (plan == null) {
+            return null;
+        }
+        Integer hours = plan.slaHours(priority);
+        if (hours == null || from == null) {
+            return null;
+        }
+        return new Date(from.getTime() + hours * HOUR_MS);
+    }
+
+    private boolean isOverdue(SupportTicket t) {
+        return t.getFirstRespondedAt() == null
+                && t.getFirstResponseDueAt() != null
+                && t.getFirstResponseDueAt().before(new Date())
+                && !t.getStatus().isTerminal();
+    }
+
+    private Map<String, String> engineerNames(Page<SupportTicket> page) {
+        Set<String> ids = page.getContent().stream()
+                .map(SupportTicket::getAssignedEngineerId)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toSet());
+        return engineerService.mapByIds(ids).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getName()));
+    }
+
+    private SupportTicketDto toSummaryDto(SupportTicket t, Map<String, String> engineerNames) {
+        return baseDto(t)
+                .assignedEngineerName(t.getAssignedEngineerId() != null
+                        ? engineerNames.get(t.getAssignedEngineerId()) : null)
+                .build();
+    }
+
+    private SupportTicketDto toDetailDto(SupportTicket t, boolean includeInternal) {
+        List<SupportTicketMessageDto> messages = messageRepository.findByTicketIdOrderByCreatedAtAsc(t.getId()).stream()
+                .filter(m -> includeInternal || !m.isInternalNote())
+                .map(this::toMessageDto)
+                .collect(Collectors.toList());
+        SupportTicketDto dto = baseDto(t)
+                .assignedEngineerName(engineerService.nameOf(t.getAssignedEngineerId()))
+                .messages(messages)
+                .build();
+        // Diagnostics (incl. IP) are surfaced only to the support team, never the customer view.
+        if (includeInternal) {
+            dto.setClientContext(readClientContext(t.getClientContext()));
+        }
+        return dto;
+    }
+
+    private SupportTicketDto.SupportTicketDtoBuilder baseDto(SupportTicket t) {
+        return SupportTicketDto.builder()
+                .id(t.getId())
+                .instituteId(t.getInstituteId())
+                .instituteName(t.getInstituteName())
+                .raisedByUserId(t.getRaisedByUserId())
+                .raisedByName(t.getRaisedByName())
+                .raisedByEmail(t.getRaisedByEmail())
+                .raisedByRole(t.getRaisedByRole())
+                .ticketNumber(t.getTicketNumber())
+                .subject(t.getSubject())
+                .category(t.getCategory() != null ? t.getCategory().name() : null)
+                .priority(t.getPriority() != null ? t.getPriority().name() : null)
+                .status(t.getStatus() != null ? t.getStatus().name() : null)
+                .planAtCreation(t.getPlanAtCreation() != null ? t.getPlanAtCreation().name() : null)
+                .assignedEngineerId(t.getAssignedEngineerId())
+                .source(t.getSource() != null ? t.getSource().name() : null)
+                .eta(t.getEta())
+                .internalOnly(t.isInternalOnly())
+                .firstResponseDueAt(t.getFirstResponseDueAt())
+                .firstRespondedAt(t.getFirstRespondedAt())
+                .resolvedAt(t.getResolvedAt())
+                .lastMessageAt(t.getLastMessageAt())
+                .messageCount(t.getMessageCount())
+                .overdue(isOverdue(t))
+                .createdAt(t.getCreatedAt())
+                .updatedAt(t.getUpdatedAt());
+    }
+
+    private SupportTicketMessageDto toMessageDto(SupportTicketMessage m) {
+        return SupportTicketMessageDto.builder()
+                .id(m.getId())
+                .ticketId(m.getTicketId())
+                .senderType(m.getSenderType() != null ? m.getSenderType().name() : null)
+                .senderName(m.getSenderName())
+                .senderUserId(m.getSenderUserId())
+                .body(m.getBody())
+                .attachments(parseAttachments(m.getAttachments()))
+                .internalNote(m.isInternalNote())
+                .createdAt(m.getCreatedAt())
+                .build();
+    }
+
+    private List<AttachmentDto> parseAttachments(String json) {
+        if (!StringUtils.hasText(json)) {
+            return Collections.emptyList();
+        }
+        try {
+            List<AttachmentDto> parsed = objectMapper.readValue(json, ATTACHMENT_LIST);
+            return parsed != null ? parsed : Collections.emptyList();
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Attachment descriptors arrive from the client body, so they are untrusted: keep only http(s)
+     * URLs (drops {@code javascript:}/{@code data:} which would otherwise be an XSS sink when later
+     * rendered into an href/src — including in the privileged super-admin console), bound the field
+     * lengths, and cap the count.
+     */
+    private List<AttachmentDto> sanitizeAttachments(List<AttachmentDto> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<AttachmentDto> cleaned = new ArrayList<>();
+        for (AttachmentDto a : attachments) {
+            if (a == null) {
+                continue;
+            }
+            String url = a.getUrl();
+            if (url != null && !url.matches("(?i)^https?://.*")) {
+                url = null; // reject non-http(s) schemes outright
+            }
+            cleaned.add(AttachmentDto.builder()
+                    .fileId(truncate(a.getFileId(), MAX_ATTACHMENT_FIELD_LEN))
+                    .fileName(truncate(a.getFileName(), MAX_ATTACHMENT_FIELD_LEN))
+                    .url(truncate(url, MAX_ATTACHMENT_FIELD_LEN))
+                    .build());
+            if (cleaned.size() >= MAX_ATTACHMENTS) {
+                break;
+            }
+        }
+        return cleaned;
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() > max ? value.substring(0, max) : value;
+    }
+
+    private String writeAttachments(List<AttachmentDto> attachments) {
+        List<AttachmentDto> cleaned = sanitizeAttachments(attachments);
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(cleaned);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String writeClientContext(Map<String, Object> ctx) {
+        if (ctx == null || ctx.isEmpty()) {
+            return null;
+        }
+        try {
+            // Bound the client-supplied diagnostics blob: cap key count and total serialized size
+            // so an admin can't bloat the shared DB with a multi-MB / deeply-nested context.
+            Map<String, Object> bounded = ctx;
+            if (ctx.size() > MAX_CONTEXT_KEYS) {
+                bounded = new LinkedHashMap<>();
+                int i = 0;
+                for (Map.Entry<String, Object> e : ctx.entrySet()) {
+                    if (i++ >= MAX_CONTEXT_KEYS) {
+                        break;
+                    }
+                    bounded.put(e.getKey(), e.getValue());
+                }
+            }
+            String json = objectMapper.writeValueAsString(bounded);
+            return json.length() > MAX_CONTEXT_JSON_LEN ? null : json;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Object readClientContext(String json) {
+        if (!StringUtils.hasText(json)) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, Object.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+}

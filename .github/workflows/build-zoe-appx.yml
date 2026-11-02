@@ -1,0 +1,132 @@
+name: Build ZOE Online School AppX (Microsoft Store)
+
+# Builds the ZOE Online School Windows Store package (.appx, x64 + ia32) on a Windows
+# runner and uploads it as a downloadable artifact. AppX packaging needs the
+# Windows SDK (makeappx), which only exists on Windows — hence windows-latest.
+#
+# Trigger manually from the Actions tab (Run workflow), or it runs on push when
+# the ZOE electron config changes.
+#
+# BEFORE the artifact is uploadable to Partner Center, make sure
+# electron/electron-builder.zoe-store.json has the REAL identity from
+# Partner Center -> Product management -> Product Identity:
+#   appx.identityName        = the exact "Package/Identity Name"
+#   appx.publisher           = the exact "Publisher" (CN=...)
+#   appx.publisherDisplayName = the "Publisher display name"
+# A mismatch builds fine but Partner Center rejects the upload.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - feature/zoe-windows-appx
+    paths:
+      - "frontend-learner-dashboard-app/electron/electron-builder.zoe-store.json"
+      - "frontend-learner-dashboard-app/electron/build-windows-zoe.sh"
+      - ".github/workflows/build-zoe-appx.yml"
+
+jobs:
+  build-appx:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: frontend-learner-dashboard-app
+    steps:
+      # Windows MAX_PATH (260 char) workaround — this monorepo has very deep
+      # paths. Enable git long paths BEFORE checkout. (workspace root, since the
+      # job's default working-directory doesn't exist until after checkout.)
+      - name: Enable Git long paths
+        working-directory: ${{ github.workspace }}
+        run: git config --global core.longpaths true
+
+      - name: Checkout (learner app only)
+        uses: actions/checkout@v4
+        with:
+          # Only need the learner app — skip frontend-admin-dashboard, whose
+          # extremely long filenames blow past MAX_PATH on Windows.
+          sparse-checkout: |
+            frontend-learner-dashboard-app
+          sparse-checkout-cone-mode: true
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.17.0 --activate
+
+      - name: Install frontend dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build frontend (ZOE flavor)
+        env:
+          VITE_ELECTRON_APP_ID: com.zoeedtech.app
+        run: pnpm run build
+
+      - name: Copy frontend build into electron/app + write flavor
+        shell: bash
+        run: |
+          rm -rf electron/app
+          cp -r dist electron/app
+          # otaAppId must be the STORE bundle id — ota.ts falls back to
+          # app.getName() without it, which never matches an OTA target_app_ids.
+          echo '{"flavor":"zoe","otaAppId":"com.zoeedtech.app"}' > electron/electron-flavor.json
+          # Which web bundle is baked in. Without this ota.ts falls back to the
+          # ELECTRON package version (1.0.x), a different numbering space, so
+          # every OTA bundle looks newer and the fresh builtin bundle is
+          # immediately replaced by an older one on first launch.
+          node -p "require('./package.json').version" | tr -d '\n' > electron/app/ota-bundle-version.txt
+          cat electron/app/ota-bundle-version.txt
+
+      # electron/package.json is checked in with Shiksha Nation's identity and is
+      # rewritten per flavor at build time — build-windows-zoe.sh does this and CI
+      # used to skip it, so the ZOE package shipped as name "Shiksha_Nation".
+      # That is not cosmetic: on Windows app.getName() resolves to package.json
+      # productName ?? name, and userData is %APPDATA%\<that name> — so ZOE and
+      # Shiksha Nation shared one localStorage, cookie jar and OTA cache on any PC
+      # with both installed. Keep this identical to build-windows-zoe.sh.
+      - name: Patch package.json for ZOE
+        working-directory: frontend-learner-dashboard-app/electron
+        shell: bash
+        run: |
+          node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.name = 'ZOE_Online_School';
+          pkg.productName = 'ZOE Online School';
+          pkg.description = 'ZOE Global Online School — AI-Powered Learning Platform';
+          pkg.author = { name: 'ZOE Global Online School', email: 'support@zoeedtech.com' };
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          node -p "'name=' + require('./package.json').name + ' productName=' + require('./package.json').productName + ' author=' + require('./package.json').author.name"
+
+      - name: Install electron dependencies
+        working-directory: frontend-learner-dashboard-app/electron
+        run: npm install
+
+      - name: Compile electron main (tsc + electron-rebuild)
+        working-directory: frontend-learner-dashboard-app/electron
+        run: npm run build
+
+      - name: Build AppX packages (x64 + ia32)
+        working-directory: frontend-learner-dashboard-app/electron
+        run: npx electron-builder build --win -c ./electron-builder.zoe-store.json
+
+      - name: List output
+        shell: bash
+        working-directory: frontend-learner-dashboard-app/electron
+        run: ls -lh dist-store || true
+
+      - name: Upload AppX artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zoe-online-school-appx
+          path: |
+            frontend-learner-dashboard-app/electron/dist-store/*.appx
+            frontend-learner-dashboard-app/electron/dist-store/*.appxbundle
+            frontend-learner-dashboard-app/electron/dist-store/*.appxupload
+          if-no-files-found: error
+          retention-days: 14

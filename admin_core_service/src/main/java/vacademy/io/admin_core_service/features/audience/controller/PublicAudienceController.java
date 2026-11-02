@@ -1,0 +1,158 @@
+package vacademy.io.admin_core_service.features.audience.controller;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import vacademy.io.admin_core_service.features.audience.dto.AudienceDTO;
+import vacademy.io.admin_core_service.features.audience.dto.CatalogueLeadRequestDTO;
+import vacademy.io.admin_core_service.features.audience.dto.BulkSubmitLeadRequestDTO;
+import vacademy.io.admin_core_service.features.audience.dto.BulkSubmitLeadResponseDTO;
+import vacademy.io.admin_core_service.features.audience.dto.BulkSubmitLeadWithEnquiryRequestDTO;
+import vacademy.io.admin_core_service.features.audience.dto.BulkSubmitLeadWithEnquiryResponseDTO;
+import vacademy.io.admin_core_service.features.audience.dto.SubmitLeadRequestDTO;
+import vacademy.io.admin_core_service.features.audience.dto.SubmitLeadWithEnquiryRequestDTO;
+import vacademy.io.admin_core_service.features.audience.dto.SubmitLeadWithEnquiryResponseDTO;
+import vacademy.io.admin_core_service.features.audience.dto.UpdateLeadWithEnquiryRequestDTO;
+import vacademy.io.admin_core_service.features.audience.dto.UpdateLeadWithEnquiryResponseDTO;
+import vacademy.io.admin_core_service.features.audience.service.AudienceService;
+import vacademy.io.admin_core_service.features.audience.service.PublicLeadRateLimiter;
+import vacademy.io.admin_core_service.features.common.service.InstituteCustomFiledService;
+
+/**
+ * Public REST Controller for Audience Management
+ * Open endpoints (no authentication) for form submissions from websites
+ */
+@RestController
+@RequestMapping("/admin-core-service/open/v1/audience")
+public class PublicAudienceController {
+
+    @Autowired
+    private AudienceService audienceService;
+
+    @Autowired
+    private InstituteCustomFiledService instituteCustomFiledService;
+
+    @Autowired
+    private PublicLeadRateLimiter rateLimiter;
+
+    /**
+     * Real client IP behind the ingress/CDN. X-Forwarded-For is a chain; the
+     * left-most entry is the original caller.
+     */
+    private String clientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            return xff.split(",")[0].trim();
+        }
+        String real = request.getHeader("X-Real-IP");
+        return (real != null && !real.isBlank()) ? real.trim() : request.getRemoteAddr();
+    }
+
+    /**
+     * Submit a lead from website form (public endpoint)
+     * POST /open/v1/audience/lead/submit
+     */
+    @PostMapping("/lead/submit")
+    public ResponseEntity<String> submitLead(@RequestBody SubmitLeadRequestDTO requestDTO,
+            HttpServletRequest request) {
+        if (!rateLimiter.tryAcquire(clientIp(request), null)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body("Too many submissions — please try again in a few minutes.");
+        }
+        String responseId = audienceService.submitLead(requestDTO);
+        return ResponseEntity.ok(responseId);
+    }
+
+    /**
+     * Submit a lead from website form with workflow integration (v2)
+     * POST /open/v1/audience/lead/submit/v2
+     * Email sending is handled by workflow engine
+     */
+    @PostMapping("/lead/submit/v2")
+    public ResponseEntity<String> submitLeadV2(@RequestBody SubmitLeadRequestDTO requestDTO,
+            HttpServletRequest request) {
+        if (!rateLimiter.tryAcquire(clientIp(request), null)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body("Too many submissions — please try again in a few minutes.");
+        }
+        String responseId = audienceService.submitLeadV2(requestDTO);
+        return ResponseEntity.ok(responseId);
+    }
+
+    /**
+     * Submit a lead from the public course catalogue / course-details "Get Started"
+     * form (public endpoint). The caller only supplies instituteId + lead fields;
+     * the service resolves/creates a per-institute "Course Catalogue Leads" audience
+     * and routes through the v2 pipeline so the lead appears in Audience Manager →
+     * Recent Leads and triggers any configured lead workflows.
+     * POST /open/v1/audience/lead/submit-catalogue
+     */
+    @PostMapping("/lead/submit-catalogue")
+    public ResponseEntity<String> submitCatalogueLead(@RequestBody CatalogueLeadRequestDTO requestDTO,
+            HttpServletRequest request) {
+        // Anonymous endpoint: cap abuse before any user/lead row is created.
+        if (!rateLimiter.tryAcquire(clientIp(request),
+                requestDTO != null ? requestDTO.getInstituteId() : null)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body("Too many submissions — please try again in a few minutes.");
+        }
+        String responseId = audienceService.submitCatalogueLead(requestDTO);
+        return ResponseEntity.ok(responseId);
+    }
+
+    @PostMapping("/lead/submit-with-enquiry")
+    public ResponseEntity<SubmitLeadWithEnquiryResponseDTO> submitLeadWithEnquiry(
+            @Valid @RequestBody SubmitLeadWithEnquiryRequestDTO requestDTO) {
+        SubmitLeadWithEnquiryResponseDTO response = audienceService.submitLeadWithEnquiry(requestDTO);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Bulk submit leads with enquiry.
+     * POST /open/v1/audience/lead/bulk-submit-with-enquiry
+     */
+    @PostMapping("/lead/bulk-submit-with-enquiry")
+    public ResponseEntity<BulkSubmitLeadWithEnquiryResponseDTO> bulkSubmitLeadWithEnquiry(
+            @RequestBody BulkSubmitLeadWithEnquiryRequestDTO request) {
+        BulkSubmitLeadWithEnquiryResponseDTO response =
+                audienceService.bulkSubmitLeadWithEnquiry(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Bulk submit simple leads (CSV import-friendly).
+     * POST /open/v1/audience/lead/bulk-submit
+     */
+    @PostMapping("/lead/bulk-submit")
+    public ResponseEntity<BulkSubmitLeadResponseDTO> bulkSubmitLead(
+            @RequestBody BulkSubmitLeadRequestDTO request) {
+        BulkSubmitLeadResponseDTO response = audienceService.bulkSubmitLead(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Update an existing lead with enquiry information
+     * PUT /open/v1/audience/lead/update-with-enquiry/{audienceResponseId}
+     * Supports partial updates - only provided fields will be updated
+     */
+    @PutMapping("/lead/update-with-enquiry/{audienceResponseId}")
+    public ResponseEntity<UpdateLeadWithEnquiryResponseDTO> updateLeadWithEnquiry(
+            @PathVariable String audienceResponseId,
+            @RequestBody UpdateLeadWithEnquiryRequestDTO requestDTO) {
+        UpdateLeadWithEnquiryResponseDTO response = audienceService.updateLeadWithEnquiry(
+                audienceResponseId, requestDTO);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/campaign/{instituteId}/{audienceId}")
+    public ResponseEntity<AudienceDTO> getCampaign(
+            @PathVariable String instituteId,
+            @PathVariable String audienceId) {
+
+        AudienceDTO campaign = audienceService.getCampaignById(audienceId, instituteId);
+        return ResponseEntity.ok(campaign);
+    }
+}

@@ -1,0 +1,77 @@
+package vacademy.io.common.institute.dto;
+
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import jakarta.persistence.Column;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.sql.Timestamp;
+import java.util.List;
+import vacademy.io.common.institute.entity.*;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+public class InstituteInfoDTO {
+    private String instituteName;
+    private String id;
+    private String country;
+    /**
+     * ISO 4217 code for money this institute owns but that carries no currency of its own — fee
+     * dues, outstanding balances. Mirrors Institute.currency (a manual override); null means the
+     * client derives from {@link #country}, and shows no symbol if that is unset too. Payment rows
+     * carry their own currency and must not use this.
+     */
+    private String currency;
+    private String state;
+    private String city;
+    private String address;
+    private String pinCode;
+    private String phone;
+    private String email;
+    private String websiteUrl;
+    private String learnerPortalBaseUrl;
+    private String teacherPortalBaseUrl;
+    private String adminPortalBaseUrl;
+    private String instituteLogoFileId;
+    private String instituteThemeCode;
+    private String language;
+    private String description;
+    private String type;
+    private String heldBy;
+    private Timestamp foundedDate;
+    private List<String> moduleRequestIds;
+    private List<InstituteSubModuleDTO> subModules;
+    private List<SessionDTO> sessions;
+    private List<PackageSessionDTO> batchesForSessions;
+    private List<LevelDTO> levels;
+    private List<String> genders;
+    private List<String> studentStatuses;
+    private List<SubjectDTO> subjects;
+    private List<Integer> sessionExpiryDays;
+    private List<PackageGroupDTO> packageGroups;
+
+    // ---- demo / free-trial provisioning ----------------------------------------
+    /** PROD | LEAD | TEST | FREE_TRIAL. Null leaves the column default alone. */
+    private String leadTag;
+    /** When a FREE_TRIAL institute stops being accessible. */
+    private java.sql.Timestamp demoExpiresAt;
+    /** pricing_quote.id this institute was provisioned from. */
+    private String sourceQuoteId;
+    private String letterHeadFileId;
+    private List<String> tags;
+    private String setting;
+    private String coverImageFileId;
+    private String coverTextJson;
+    private String board;
+    private String gstDetails;
+    private String affiliationNumber;
+    private Integer staffStrength;
+    private Integer schoolStrength;
+    private String accountType;
+    private String product;
+    private String companySize;
+}

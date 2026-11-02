@@ -1,0 +1,31 @@
+# pipecat 1.4.0 — the founder POC's proven pin (sales-poc-ai). Verified against
+# every module path this service imports (migration audit 2026-08-05, see memory
+# pipecat14-migration): services.sarvam.stt/tts (native mode/language/reconnect),
+# services.google.stt + services.google.vertex.llm, aggregators llm_context +
+# llm_response_universal (owns VAD + UserTurnStrategies + Smart Turn + idle),
+# transports.websocket.fastapi (transports.network is GONE), serializers.plivo,
+# runner.utils.parse_telephony_websocket, audio.turn.smart_turn.local_smart_turn_v3
+# (no extra needed; model baked into the image — see Dockerfile).
+# `local` extra deliberately absent: it drags pyaudio/portaudio (desktop only).
+pipecat-ai[silero,websocket,sarvam,google,openai,deepgram,aws,soundfile]==1.4.0
+aiohttp>=3.9
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+python-dotenv>=1.0
+# Microsoft Edge read-aloud TTS. FREE and needs no key, which is the whole point
+# — but it is NOT offline: it calls Microsoft's public endpoint, so it is a
+# network dependency with no SLA behind it. miniaudio decodes its MP3 (the
+# output format is hardcoded in edge_tts; there is no PCM option) at ~4ms per
+# call, which is what makes streaming decode viable.
+edge-tts>=7.2
+miniaudio>=1.59
+# Telephone-band EQ on the bot voice (app/voice_eq.py) uses scipy IIR
+# filtering. Already present transitively; pinned here because we now depend
+# on it directly.
+scipy>=1.11
+# Voice modulation (app/prosody.py): Praat's PSOLA pitch resynthesis via
+# parselmouth. Binary wheels for py3.12 manylinux; no Praat install needed.
+praat-parselmouth>=0.4.7
+# Navana (Bodhi) TTS — ships its own Pipecat service (verified on pipecat 1.4.0).
+bodhi-api-sdk[tts]==1.2.0
