@@ -689,4 +689,5 @@ Vacademy integrates AI deeply into the teaching and learning experience — not 
 
 *Built with ❤️ by the Vacademy community • [Contribute](https://github.com/Vacademy-io/vacademy_edtech_platform) • [Report Issues](https://github.com/Vacademy-io/vacademy_edtech_platform/issues) • [Join Discussions](https://github.com/Vacademy-io/vacademy_edtech_platform/discussions)*
 #   s h i k s h a n a t i o n - l m s  
+ #   s h i k s h a n a t i o n - l m s  
  
